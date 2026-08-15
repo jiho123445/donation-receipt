@@ -12,7 +12,7 @@ export interface PdfExportResult {
 }
 
 /**
- * Generate high-resolution PDF from the A4 receipt element and prompt user for local save location
+ * Generate A4 PDF from the receipt element with optimized rendering and prompt user for local save location
  */
 export async function exportReceiptToPdf(
   receiptElement: HTMLElement,
@@ -27,7 +27,7 @@ export async function exportReceiptToPdf(
     // Generate high-resolution image using native browser SVG/foreignObject rendering
     // This fully supports modern CSS including Tailwind v4's OKLCH color model
     const imgData = await toPng(receiptElement, {
-      pixelRatio: 2.5,
+      pixelRatio: 2,
       backgroundColor: '#ffffff',
       cacheBust: true,
       style: {
@@ -117,6 +117,8 @@ export async function exportReceiptToPdf(
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
+    // Release the Blob URL after handing it to the browser.
+    setTimeout(() => URL.revokeObjectURL(blobUrl), 1000);
 
     return {
       success: true,

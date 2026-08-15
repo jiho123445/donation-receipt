@@ -13,11 +13,11 @@ export interface PdfExportResult {
 }
 
 /**
- * Generate A4 PDF Blob (210mm x 297mm, 300 DPI high resolution)
+ * Generate A4 PDF Blob (210mm x 297mm, optimized high-resolution rendering)
  */
 export async function generateReceiptPdfBlob(receiptElement: HTMLElement): Promise<Blob> {
   const imgData = await toPng(receiptElement, {
-    pixelRatio: 3,
+    pixelRatio: 2,
     backgroundColor: '#ffffff',
     cacheBust: true,
     style: {
@@ -156,6 +156,8 @@ export async function exportReceiptToPdf(
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
+    // Release the Blob URL after handing it to the browser.
+    setTimeout(() => URL.revokeObjectURL(blobUrl), 1000);
 
     return {
       success: true,
