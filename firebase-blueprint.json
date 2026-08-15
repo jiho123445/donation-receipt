@@ -1,0 +1,75 @@
+{
+  "entities": {
+    "Donor": {
+      "title": "Donor",
+      "description": "후원자 기본정보",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "description": "후원자 식별 키" },
+        "donorName": { "type": "string", "description": "후원자 성명 또는 법인명" },
+        "idNumber": { "type": "string", "description": "주민등록번호 또는 사업자등록번호" },
+        "address": { "type": "string", "description": "주소" },
+        "isBusiness": { "type": "boolean", "description": "법인 여부" },
+        "phone": { "type": "string", "description": "연락처" },
+        "email": { "type": "string", "description": "이메일" },
+        "createdAt": { "type": "string" },
+        "updatedAt": { "type": "string" }
+      },
+      "required": ["donorName"]
+    },
+    "Donation": {
+      "title": "Donation",
+      "description": "후원금 납부내역",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "description": "후원금 고유 식별자" },
+        "donorName": { "type": "string", "description": "후원자 성명" },
+        "idNumber": { "type": "string", "description": "주민등록번호 또는 사업자등록번호" },
+        "address": { "type": "string", "description": "주소" },
+        "date": { "type": "string", "description": "납부일자 YYYY-MM-DD" },
+        "amount": { "type": "number", "description": "납부금액" },
+        "paymentMethod": { "type": "string", "description": "납부방법 (계좌이체, CMS 등)" },
+        "donationType": { "type": "string", "description": "기부금 유형" },
+        "donationCode": { "type": "string", "description": "기부금 코드 (예: 40)" },
+        "content": { "type": "string", "description": "적요 내용" },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["donorName", "amount", "date"]
+    },
+    "Receipt": {
+      "title": "Receipt",
+      "description": "발급된 기부금영수증 기록",
+      "type": "object",
+      "properties": {
+        "receiptNo": { "type": "string", "description": "발급번호 (예: 2026-00001)" },
+        "issueDate": { "type": "string", "description": "발급일자 YYYY-MM-DD" },
+        "taxYear": { "type": "number", "description": "귀속연도" },
+        "formType": { "type": "string", "description": "개인(individual) 또는 법인(corporate)" },
+        "donorName": { "type": "string", "description": "기부자 성명" },
+        "donorIdNumber": { "type": "string", "description": "주민번호 또는 사업자번호" },
+        "donorAddress": { "type": "string", "description": "주소" },
+        "isBusiness": { "type": "boolean", "description": "법인 여부" },
+        "totalAmount": { "type": "number", "description": "합계금액" },
+        "amountInKorean": { "type": "string", "description": "한글 표시 금액" },
+        "status": { "type": "string", "description": "발급상태 (issued | cancelled)" },
+        "createdAt": { "type": "string" },
+        "notes": { "type": "string", "description": "비고" }
+      },
+      "required": ["receiptNo", "donorName", "totalAmount", "issueDate", "taxYear"]
+    }
+  },
+  "firestore": {
+    "/donors/{donorId}": {
+      "schema": "Donor",
+      "description": "후원자 기본정보 컬렉션"
+    },
+    "/donations/{donationId}": {
+      "schema": "Donation",
+      "description": "후원금 납부내역 컬렉션"
+    },
+    "/receipts/{receiptId}": {
+      "schema": "Receipt",
+      "description": "발급된 기부금영수증 기록 컬렉션"
+    }
+  }
+}

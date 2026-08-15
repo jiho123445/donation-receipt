@@ -11,6 +11,19 @@ export interface RawDonationRecord {
   content?: string; // 후원금, 장학후원 등
 }
 
+export interface DonorRecord {
+  id: string; // unique donorKey
+  donorName: string;
+  idNumber: string;
+  address: string;
+  isBusiness?: boolean;
+  phone?: string;
+  email?: string;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+
 export interface DonorGroup {
   donorKey: string; // unique key (e.g., name + idNumber or name + address)
   donorName: string;

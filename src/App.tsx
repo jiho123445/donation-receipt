@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { onAuthStateChanged, signOut, type User } from 'firebase/auth';
-import { auth, firebaseConfigured } from './firebase';
+import { AlertCircle, CheckCircle2, Cloud, RefreshCw, X } from 'lucide-react';
+import { auth, firebaseConfigured, firebaseConfig } from './firebase';
 import {
   RawDonationRecord,
   OrganizationInfo,
@@ -32,11 +33,23 @@ import { ReceiptPreviewModal } from './components/ReceiptPreviewModal';
 import { OfficialReceiptA4 } from './components/OfficialReceiptA4';
 import { LoginScreen } from './components/LoginScreen';
 import { INITIAL_SAMPLE_DONATIONS } from './utils/sampleData';
-import { loadCloudOrganization, loadCloudReceipts, saveCloudOrganization, saveCloudReceipt, cancelCloudReceipt, getNextCloudReceiptNumber } from './utils/firebaseDb';
+import {
+  loadCloudOrganization,
+  loadCloudReceipts,
+  saveCloudOrganization,
+  saveCloudReceipt,
+  cancelCloudReceipt,
+  getNextCloudReceiptNumber,
+  testFirestoreConnection,
+  saveCloudDonor,
+  type FirestoreConnectionStatus,
+} from './utils/firebaseDb';
 
 export default function App() {
   const [user, setUser] = useState<User | null>(null);
   const [authReady, setAuthReady] = useState(!firebaseConfigured);
+  const [firestoreStatus, setFirestoreStatus] = useState<FirestoreConnectionStatus | null>(null);
+  const [showStatusBanner, setShowStatusBanner] = useState(true);
 
   // Navigation
   const [activeTab, setActiveTab] = useState<'search' | 'history' | 'excel' | 'settings' | 'print'>('search');
@@ -59,8 +72,23 @@ export default function App() {
   } | null>(null);
   const [previewReceipt, setPreviewReceipt] = useState<IssuedReceiptRecord | null>(null);
 
+  // Check Firestore connection
+  const checkConnection = async () => {
+    if (!firebaseConfigured) {
+      setFirestoreStatus({
+        connected: false,
+        message: '로컬 데이터 모드로 동작 중입니다. (Firebase API Key 환경변수 미설정 시 안전한 로컬 저장소를 사용합니다)',
+      });
+      return;
+    }
+    const status = await testFirestoreConnection();
+    setFirestoreStatus(status);
+  };
+
   // Initialize data on mount
   useEffect(() => {
+    checkConnection();
+
     if (!firebaseConfigured || !auth) {
       setAuthReady(true);
       setDonations(INITIAL_SAMPLE_DONATIONS);
@@ -91,8 +119,17 @@ export default function App() {
           await saveCloudOrganization(localOrg);
         }
         setIssuedReceipts(cloudReceipts);
-      } catch (error) {
-        console.error(error);
+        setFirestoreStatus({
+          connected: true,
+          message: `Cloud Firestore (프로젝트: ${firebaseConfig.projectId})에 정상 연결되었습니다.`,
+        });
+      } catch (error: any) {
+        console.error('Firestore 데이터 로드 실패:', error);
+        setFirestoreStatus({
+          connected: false,
+          message: `Firestore 연결 오류: ${error?.message || '데이터를 불러올 수 없습니다. Firestore 권한 설정을 확인하세요.'}`,
+          errorDetail: String(error),
+        });
         setOrgInfo(getOrganizationInfo());
         setIssuedReceipts(getIssuedReceipts());
       }
@@ -100,6 +137,7 @@ export default function App() {
       setPrintSettings(getPrintSettings());
     });
   }, []);
+
 
   // Update Donations Handler
   const handleUpdateDonations = (records: RawDonationRecord[]) => {
@@ -194,6 +232,15 @@ export default function App() {
       if (firebaseConfigured && auth?.currentUser) {
         try {
           await saveCloudReceipt(newReceipt);
+          // Also save donor record and donation records to donors & donations collections
+          await saveCloudDonor({
+            id: `${donorName}_${idNumber || address}`.replace(/[\\/:*?"<>|]/g, '_'),
+            donorName,
+            idNumber,
+            address,
+            isBusiness: formType === 'corporate',
+            updatedAt: new Date().toISOString(),
+          });
         } catch (error) {
           console.error('Firebase 클라우드 동기화 실패:', error);
         }
@@ -256,11 +303,64 @@ export default function App() {
 
       {/* Main Content Area */}
       {firebaseConfigured && user && (
-        <div className="no-print bg-blue-50 border-b border-blue-100 px-4 py-2 text-right text-xs">
-          로그인: {user.email} <button onClick={handleLogout} className="ml-3 font-bold underline">로그아웃</button>
+        <div className="no-print bg-blue-50 border-b border-blue-100 px-4 py-2 flex flex-wrap items-center justify-between gap-2 text-xs text-blue-900">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="inline-block w-2 h-2 rounded-full bg-emerald-500"></span>
+            <span>프로젝트: <strong>{firebaseConfig.projectId}</strong></span>
+            <span className="text-blue-300">|</span>
+            <span>인증 계정: <strong>{user.email}</strong></span>
+            <span className="text-blue-300">|</span>
+            <span className="text-slate-600">UID: <code className="bg-white px-1.5 py-0.5 rounded border border-blue-200 text-[11px] font-mono text-blue-950 font-bold">{user.uid}</code></span>
+          </div>
+          <button onClick={handleLogout} className="font-semibold underline text-blue-800 hover:text-blue-950 cursor-pointer">로그아웃</button>
+        </div>
+      )}
+
+      {/* Firestore Status / Error Banner */}
+      {firestoreStatus && showStatusBanner && (
+        <div className={`no-print border-b px-4 py-2.5 text-xs flex items-center justify-between ${
+          firestoreStatus.connected
+            ? 'bg-emerald-50 text-emerald-900 border-emerald-200'
+            : firestoreStatus.code === 'permission-denied' || firestoreStatus.errorDetail
+            ? 'bg-amber-50 text-amber-900 border-amber-300'
+            : 'bg-slate-100 text-slate-700 border-slate-200'
+        }`}>
+          <div className="max-w-7xl mx-auto w-full flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              {firestoreStatus.connected ? (
+                <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+              ) : (
+                <AlertCircle className="w-4 h-4 text-amber-600 shrink-0" />
+              )}
+              <span>
+                <strong>Firestore 상태:</strong> {firestoreStatus.message}
+                {firestoreStatus.errorDetail && (
+                  <span className="ml-1 text-slate-500 font-mono text-[11px]">({firestoreStatus.code || 'error'})</span>
+                )}
+              </span>
+            </div>
+            <div className="flex items-center gap-3">
+              <button
+                onClick={checkConnection}
+                className="flex items-center gap-1 font-semibold text-slate-600 hover:text-slate-900 underline cursor-pointer"
+                title="연결 재확인"
+              >
+                <RefreshCw className="w-3 h-3" />
+                <span>재확인</span>
+              </button>
+              <button
+                onClick={() => setShowStatusBanner(false)}
+                className="text-slate-400 hover:text-slate-600 cursor-pointer p-0.5"
+                title="배너 닫기"
+              >
+                <X className="w-3.5 h-3.5" />
+              </button>
+            </div>
+          </div>
         </div>
       )}
       <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6">
+
         {/* Tab 1: Search & Issue Receipt */}
         {activeTab === 'search' && (
           <DonorSearch

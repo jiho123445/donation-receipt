@@ -6,14 +6,37 @@ service cloud.firestore {
       return request.auth != null;
     }
 
-    match /organizations/main {
+    // 1. 단체 기본정보
+    match /organizations/{orgId} {
       allow read, write: if signedIn();
     }
 
+    // 2. 후원자 기본정보 컬렉션
+    match /donors/{donorId} {
+      allow read, write: if signedIn();
+    }
+
+    // 3. 후원금 납부내역 컬렉션
+    match /donations/{donationId} {
+      allow read, write: if signedIn();
+    }
+
+    // 4. 발급된 기부금영수증 기록 컬렉션
+    match /receipts/{receiptId} {
+      allow read, write: if signedIn();
+    }
+
+    // 하위 호환성 유지용 issuedReceipts 컬렉션
     match /issuedReceipts/{receiptId} {
       allow read, write: if signedIn();
     }
 
+    // 영수증 일련번호 카운터
+    match /counters/{taxYear} {
+      allow read, write: if signedIn();
+    }
+
+    // 기본 차단 규칙
     match /{document=**} {
       allow read, write: if false;
     }
