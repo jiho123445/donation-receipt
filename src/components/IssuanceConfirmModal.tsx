@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { X, CheckCircle, AlertTriangle, FileText, Calendar, Building, User, Info, ArrowRight } from 'lucide-react';
+import { X, CheckCircle, AlertTriangle, FileText, Calendar, Building, User, ShieldAlert, ArrowRight, Loader2 } from 'lucide-react';
 import { RawDonationRecord, OrganizationInfo, IssuedReceiptRecord, ReceiptFormType } from '../types/donation';
 import { formatKRW, numberToHangulAmount } from '../utils/hangulCurrency';
 
@@ -12,7 +12,11 @@ interface IssuanceConfirmModalProps {
   taxYear: number;
   donations: RawDonationRecord[];
   orgInfo: OrganizationInfo;
-  onConfirmIssuance: (formType: ReceiptFormType, issueDate: string, isReissue: boolean) => void;
+  onConfirmIssuance: (
+    formType: ReceiptFormType,
+    issueDate: string,
+    isReissue: boolean
+  ) => Promise<{ success: boolean; error?: string } | void> | void;
   onViewExistingReceipt: (receipt: IssuedReceiptRecord) => void;
   onOpenOrgSettings: () => void;
   existingReceipts: IssuedReceiptRecord[];
@@ -39,6 +43,8 @@ export const IssuanceConfirmModal: React.FC<IssuanceConfirmModalProps> = ({
     new Date().toISOString().split('T')[0]
   );
   const [forceNewIssuance, setForceNewIssuance] = useState(false);
+  const [localError, setLocalError] = useState<string | null>(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   if (!isOpen) return null;
 
@@ -56,6 +62,29 @@ export const IssuanceConfirmModal: React.FC<IssuanceConfirmModalProps> = ({
 
   // Check if organization statutory IDs are missing
   const isOrgIncomplete = !orgInfo.registrationNo && !orgInfo.bizNo;
+
+  const handleConfirmClick = async () => {
+    setLocalError(null);
+
+    // 1. Check if organization statutory ID is missing
+    if (isOrgIncomplete) {
+      setLocalError('기부금영수증 발급에 필요한 단체 고유번호 또는 사업자등록번호가 등록되지 않았습니다.');
+      return;
+    }
+
+    setIsSubmitting(true);
+    try {
+      const result = await onConfirmIssuance(formType, issueDate, forceNewIssuance);
+      if (result && typeof result === 'object' && !result.success && result.error) {
+        setLocalError(result.error);
+      }
+    } catch (error) {
+      console.error('영수증 발급 실패:', error);
+      setLocalError('영수증 생성 중 오류가 발생했습니다. 다시 시도해주세요.');
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
 
   return (
     <div className="fixed inset-0 z-50 overflow-y-auto bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
@@ -78,6 +107,34 @@ export const IssuanceConfirmModal: React.FC<IssuanceConfirmModalProps> = ({
         </div>
 
         <div className="p-6 space-y-4">
+          {/* Missing Org Statutory ID Warning / Error Banner */}
+          {(isOrgIncomplete || localError) && (
+            <div className="bg-rose-50 border-2 border-rose-300 rounded-lg p-4 text-xs text-rose-900 space-y-2.5 animate-in fade-in duration-200">
+              <div className="flex items-start gap-2.5">
+                <ShieldAlert className="w-5 h-5 text-rose-600 shrink-0 mt-0.5" />
+                <div className="space-y-1">
+                  <div className="font-bold text-sm text-rose-950">
+                    {localError || '기부금영수증 발급에 필요한 단체 고유번호 또는 사업자등록번호가 등록되지 않았습니다.'}
+                  </div>
+                  <p className="text-rose-800 leading-relaxed">
+                    소득세법/법인세법 규정에 따라 영수증 발급자란에 고유번호 또는 사업자등록번호가 반드시 기재되어야 합니다.
+                  </p>
+                </div>
+              </div>
+
+              <div className="pt-1 flex items-center justify-end">
+                <button
+                  type="button"
+                  onClick={onOpenOrgSettings}
+                  className="inline-flex items-center gap-1.5 px-3.5 py-2 bg-rose-600 hover:bg-rose-700 text-white font-bold rounded-md shadow-xs transition-colors cursor-pointer text-xs"
+                >
+                  <span>단체정보 입력으로 이동</span>
+                  <ArrowRight className="w-4 h-4" />
+                </button>
+              </div>
+            </div>
+          )}
+
           {/* Duplicate Issuance Warning */}
           {isDuplicate && existingReceipt && (
             <div className="bg-amber-50 border-2 border-amber-300 rounded-lg p-4 text-xs text-amber-900 space-y-2">
@@ -112,25 +169,6 @@ export const IssuanceConfirmModal: React.FC<IssuanceConfirmModalProps> = ({
                   새로 발급 (재발급)
                 </button>
               </div>
-            </div>
-          )}
-
-          {/* Missing Org Statutory ID Warning */}
-          {isOrgIncomplete && (
-            <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 text-xs text-blue-900 flex items-start justify-between gap-2">
-              <div className="flex items-start gap-2">
-                <Info className="w-4 h-4 text-blue-600 shrink-0 mt-0.5" />
-                <div>
-                  <span className="font-bold">재단 고유번호/사업자번호 미등록:</span> 영수증에 표기될 법정 식별번호가 아직 입력되지 않았습니다.
-                </div>
-              </div>
-              <button
-                type="button"
-                onClick={onOpenOrgSettings}
-                className="shrink-0 text-xs font-bold text-blue-700 underline hover:text-blue-900 cursor-pointer"
-              >
-                단체정보 입력
-              </button>
             </div>
           )}
 
@@ -238,18 +276,29 @@ export const IssuanceConfirmModal: React.FC<IssuanceConfirmModalProps> = ({
             <button
               type="button"
               onClick={onClose}
-              className="px-4 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-100 rounded-md border border-slate-300 cursor-pointer"
+              disabled={isSubmitting}
+              className="px-4 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-100 rounded-md border border-slate-300 cursor-pointer disabled:opacity-50"
             >
               취소
             </button>
 
             <button
               type="button"
-              onClick={() => onConfirmIssuance(formType, issueDate, forceNewIssuance)}
-              className="inline-flex items-center gap-1.5 px-5 py-2 text-xs font-bold text-white bg-blue-900 hover:bg-blue-800 rounded-md shadow-xs transition-colors cursor-pointer"
+              onClick={handleConfirmClick}
+              disabled={isSubmitting}
+              className="inline-flex items-center gap-1.5 px-5 py-2 text-xs font-bold text-white bg-blue-900 hover:bg-blue-800 rounded-md shadow-xs transition-colors cursor-pointer disabled:opacity-50"
             >
-              <CheckCircle className="w-4 h-4" />
-              <span>영수증 발급 및 미리보기</span>
+              {isSubmitting ? (
+                <>
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                  <span>생성 중...</span>
+                </>
+              ) : (
+                <>
+                  <CheckCircle className="w-4 h-4" />
+                  <span>영수증 발급 및 미리보기</span>
+                </>
+              )}
             </button>
           </div>
         </div>

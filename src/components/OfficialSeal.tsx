@@ -8,29 +8,20 @@ interface OfficialSealProps {
 }
 
 export const OfficialSeal: React.FC<OfficialSealProps> = ({
-  name = '사단법인너브내행복나눔재단이사장인',
-  size = 68,
+  size = 64,
   customSealUrl,
   className = '',
 }) => {
-  if (customSealUrl) {
-    return (
-      <img
-        src={customSealUrl}
-        alt="재단 직인"
-        className={`object-contain ${className}`}
-        style={{ width: `${size}px`, height: `${size}px` }}
-      />
-    );
+  if (!customSealUrl) {
+    return null;
   }
 
   return (
-    <div
-      className={`inline-flex items-center justify-center rounded border border-dashed border-slate-400 text-[10px] text-slate-500 bg-white ${className}`}
+    <img
+      src={customSealUrl}
+      alt="직인"
+      className={`object-contain pointer-events-none ${className}`}
       style={{ width: `${size}px`, height: `${size}px` }}
-      title="실제 직인 이미지를 등록해 주세요"
-    >
-      직인 미등록
-    </div>
+    />
   );
 };

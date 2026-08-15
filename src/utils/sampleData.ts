@@ -106,4 +106,30 @@ export const INITIAL_SAMPLE_DONATIONS: RawDonationRecord[] = [
     donationCode: '40',
     content: '취약계층복지사업지원',
   },
+
+  // 6. 김지호 (개인 기부자 샘플) - 2026년 후원금
+  {
+    id: 'sample-9',
+    donorName: '김지호',
+    idNumber: '920510-1456789',
+    address: '강원특별자치도 홍천군 홍천읍 송학로3길 15',
+    date: '2026-03-10',
+    amount: 150000,
+    paymentMethod: '계좌이체',
+    donationType: '지정기부금',
+    donationCode: '40',
+    content: '취약계층복지후원',
+  },
+  {
+    id: 'sample-10',
+    donorName: '김지호',
+    idNumber: '920510-1456789',
+    address: '강원특별자치도 홍천군 홍천읍 송학로3길 15',
+    date: '2026-06-15',
+    amount: 150000,
+    paymentMethod: '계좌이체',
+    donationType: '지정기부금',
+    donationCode: '40',
+    content: '취약계층복지후원',
+  },
 ];

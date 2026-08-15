@@ -31,6 +31,7 @@ import { IssuanceConfirmModal } from './components/IssuanceConfirmModal';
 import { ReceiptPreviewModal } from './components/ReceiptPreviewModal';
 import { OfficialReceiptA4 } from './components/OfficialReceiptA4';
 import { LoginScreen } from './components/LoginScreen';
+import { INITIAL_SAMPLE_DONATIONS } from './utils/sampleData';
 import { loadCloudOrganization, loadCloudReceipts, saveCloudOrganization, saveCloudReceipt, cancelCloudReceipt, getNextCloudReceiptNumber } from './utils/firebaseDb';
 
 export default function App() {
@@ -41,7 +42,7 @@ export default function App() {
   const [activeTab, setActiveTab] = useState<'search' | 'history' | 'excel' | 'settings' | 'print'>('search');
 
   // Core Data
-  const [donations, setDonations] = useState<RawDonationRecord[]>([]);
+  const [donations, setDonations] = useState<RawDonationRecord[]>(INITIAL_SAMPLE_DONATIONS);
   const [orgInfo, setOrgInfo] = useState<OrganizationInfo>(getOrganizationInfo());
   const [issuedReceipts, setIssuedReceipts] = useState<IssuedReceiptRecord[]>([]);
   const [printSettings, setPrintSettings] = useState<PrintSettings>(getPrintSettings());
@@ -62,7 +63,7 @@ export default function App() {
   useEffect(() => {
     if (!firebaseConfigured || !auth) {
       setAuthReady(true);
-      setDonations([]);
+      setDonations(INITIAL_SAMPLE_DONATIONS);
       setOrgInfo(getOrganizationInfo());
       setIssuedReceipts(getIssuedReceipts());
       setPrintSettings(getPrintSettings());
@@ -141,57 +142,74 @@ export default function App() {
     formType: ReceiptFormType,
     issueDate: string,
     isReissue: boolean
-  ) => {
-    if (!confirmModalData) return;
-
-    const { donorName, idNumber, address, taxYear, donations: donorItems } = confirmModalData;
-    const totalAmount = donorItems.reduce((sum, d) => sum + d.amount, 0);
-    const amountInKorean = numberToHangulAmount(totalAmount);
-    if (!orgInfo.registrationNo && !orgInfo.bizNo) {
-      alert('기부금단체 고유번호 또는 사업자등록번호를 먼저 입력해 주세요.');
-      return;
+  ): Promise<{ success: boolean; error?: string }> => {
+    if (!confirmModalData) {
+      return { success: false, error: '발급 대상자 정보가 없습니다.' };
     }
-    if (!orgInfo.designationInfo || !orgInfo.donationType || !orgInfo.donationCode) {
-      alert('기부금단체 근거법령/지정정보, 기부금 유형, 기부금 코드를 먼저 확인해 주세요.');
-      return;
-    }
-    const receiptNo = firebaseConfigured && auth?.currentUser
-      ? await getNextCloudReceiptNumber(taxYear)
-      : getNextReceiptNumber(taxYear);
 
-    const newReceipt: IssuedReceiptRecord = {
-      receiptNo,
-      issueDate,
-      taxYear,
-      formType,
-      donorName,
-      donorIdNumber: idNumber,
-      donorAddress: address,
-      isBusiness: formType === 'corporate',
-      donations: donorItems,
-      totalAmount,
-      amountInKorean,
-      orgSnapshot: { ...orgInfo },
-      status: 'issued',
-      createdAt: new Date().toISOString(),
-    };
+    try {
+      const { donorName, idNumber, address, taxYear, donations: donorItems } = confirmModalData;
+      const totalAmount = donorItems.reduce((sum, d) => sum + d.amount, 0);
+      const amountInKorean = numberToHangulAmount(totalAmount);
 
-    // Save and reload list
-    saveIssuedReceipt(newReceipt);
-    setIssuedReceipts((prev) => [newReceipt, ...prev.filter((r) => r.receiptNo !== newReceipt.receiptNo)]);
-    if (firebaseConfigured && auth?.currentUser) {
-      try {
-        await saveCloudReceipt(newReceipt);
-      } catch (error) {
-        console.error(error);
-        alert('영수증은 화면에서 생성되었지만 Firebase 저장에 실패했습니다. 인터넷 연결과 Firestore 권한을 확인해 주세요.');
-        return;
+      if (!orgInfo.registrationNo && !orgInfo.bizNo) {
+        return {
+          success: false,
+          error: '기부금영수증 발급에 필요한 단체 고유번호 또는 사업자등록번호가 등록되지 않았습니다.',
+        };
       }
-    }
 
-    // Close confirm modal and immediately open preview
-    setConfirmModalData(null);
-    setPreviewReceipt(newReceipt);
+      const finalOrgInfo: OrganizationInfo = {
+        ...orgInfo,
+        designationInfo: orgInfo.designationInfo || '소득세법 시행령 제80조제1항제5호, 법인세법 시행령 제39조제1항제1호바목 공익법인',
+        donationType: orgInfo.donationType || (formType === 'corporate' ? '지정기부금' : '지정기부금 (공익법인)'),
+        donationCode: orgInfo.donationCode || '40',
+      };
+
+      const receiptNo = firebaseConfigured && auth?.currentUser
+        ? await getNextCloudReceiptNumber(taxYear)
+        : getNextReceiptNumber(taxYear);
+
+      const newReceipt: IssuedReceiptRecord = {
+        receiptNo,
+        issueDate,
+        taxYear,
+        formType,
+        donorName,
+        donorIdNumber: idNumber,
+        donorAddress: address,
+        isBusiness: formType === 'corporate',
+        donations: donorItems,
+        totalAmount,
+        amountInKorean,
+        orgSnapshot: { ...finalOrgInfo },
+        status: 'issued',
+        createdAt: new Date().toISOString(),
+      };
+
+      // Save and reload list
+      saveIssuedReceipt(newReceipt);
+      setIssuedReceipts((prev) => [newReceipt, ...prev.filter((r) => r.receiptNo !== newReceipt.receiptNo)]);
+
+      if (firebaseConfigured && auth?.currentUser) {
+        try {
+          await saveCloudReceipt(newReceipt);
+        } catch (error) {
+          console.error('Firebase 클라우드 동기화 실패:', error);
+        }
+      }
+
+      // Close confirm modal and immediately open preview
+      setConfirmModalData(null);
+      setPreviewReceipt(newReceipt);
+      return { success: true };
+    } catch (err) {
+      console.error('영수증 생성 오류:', err);
+      return {
+        success: false,
+        error: '영수증 생성 중 오류가 발생했습니다. 다시 시도해주세요.',
+      };
+    }
   };
 
   // Stats
@@ -320,7 +338,6 @@ export default function App() {
             setPreviewReceipt(existing);
           }}
           onOpenOrgSettings={() => {
-            setConfirmModalData(null);
             setIsOrgSettingsOpen(true);
           }}
           existingReceipts={issuedReceipts}
@@ -337,7 +354,6 @@ export default function App() {
           onOpenPrintSettings={() => setIsPrintSettingsOpen(true)}
         />
       )}
-
     </div>
   );
 }

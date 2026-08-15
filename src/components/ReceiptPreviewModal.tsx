@@ -1,188 +1,209 @@
-import React, { useState } from 'react';
-import { ArrowLeft, Printer, X, ZoomIn, ZoomOut, FileDown, Loader2 } from 'lucide-react';
+import React, { useState, useRef } from 'react';
+import { X, Printer, Download, ArrowLeft, Loader2, CheckCircle2, AlertCircle } from 'lucide-react';
 import { IssuedReceiptRecord, PrintSettings } from '../types/donation';
 import { OfficialReceiptA4 } from './OfficialReceiptA4';
 import { exportReceiptToPdf } from '../utils/pdfExport';
+import { printReceiptInIsolatedWindow } from '../utils/printHelper';
 
 interface ReceiptPreviewModalProps {
   isOpen: boolean;
   onClose: () => void;
   receipt: IssuedReceiptRecord | null;
-  printSettings: PrintSettings;
+  printSettings?: PrintSettings;
   onOpenPrintSettings?: () => void;
-}
-
-function copyStylesToPrintWindow(printWindow: Window) {
-  const head = printWindow.document.head;
-  document.querySelectorAll('link[rel="stylesheet"], style').forEach((node) => {
-    head.appendChild(node.cloneNode(true));
-  });
-}
-
-async function printReceiptInNewWindow(): Promise<boolean> {
-  const source = document.querySelector('.print-only-container .receipt-page') as HTMLElement | null;
-  if (!source) return false;
-
-  const printWindow = window.open('', '_blank', 'width=1000,height=900');
-  if (!printWindow) return false;
-
-  const cloned = source.cloneNode(true) as HTMLElement;
-  cloned.removeAttribute('id');
-  cloned.style.transform = 'none';
-  cloned.style.margin = '0';
-  cloned.style.boxShadow = 'none';
-  cloned.style.border = 'none';
-
-  printWindow.document.open();
-  printWindow.document.write(`<!doctype html><html lang="ko"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>기부금영수증 인쇄</title></head><body></body></html>`);
-  printWindow.document.close();
-
-  copyStylesToPrintWindow(printWindow);
-
-  const style = printWindow.document.createElement('style');
-  style.textContent = `
-    @page { size: A4 portrait; margin: 0; }
-    html, body { width: 210mm; min-height: 297mm; margin: 0; padding: 0; background: #fff; }
-    body { overflow: hidden; }
-    .receipt-page { width: 210mm !important; height: 297mm !important; min-height: 297mm !important; margin: 0 !important; box-shadow: none !important; border: none !important; transform: none !important; }
-    * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
-  `;
-  printWindow.document.head.appendChild(style);
-  printWindow.document.body.appendChild(cloned);
-
-  await new Promise<void>((resolve) => {
-    if (printWindow.document.readyState === 'complete') resolve();
-    else printWindow.addEventListener('load', () => resolve(), { once: true });
-    window.setTimeout(resolve, 500);
-  });
-
-  printWindow.focus();
-  printWindow.print();
-  return true;
 }
 
 export const ReceiptPreviewModal: React.FC<ReceiptPreviewModalProps> = ({
   isOpen,
   onClose,
   receipt,
-  printSettings,
+  printSettings = { offsetX: 0, offsetY: 0, scale: 100 },
 }) => {
-  const [zoomLevel, setZoomLevel] = useState(100);
   const [isSavingPdf, setIsSavingPdf] = useState(false);
-  const [message, setMessage] = useState<string | null>(null);
+  const [statusMessage, setStatusMessage] = useState<{
+    type: 'success' | 'info' | 'error';
+    text: string;
+  } | null>(null);
+
+  const receiptContainerRef = useRef<HTMLDivElement | null>(null);
 
   if (!isOpen || !receipt) return null;
 
-  const handlePrint = async () => {
-    setMessage(null);
-
-    // A new top-level window is more reliable than calling print() inside
-    // the Google AI Studio Preview iframe.
-    const opened = await printReceiptInNewWindow();
-    if (!opened) {
-      // Fallback for environments that block popups.
-      window.print();
-    }
-  };
-
+  // Handle PDF Export with File System Access API (showSaveFilePicker)
   const handleSavePdf = async () => {
-    setMessage(null);
-    const receiptElement = document.querySelector('.print-only-container .receipt-page') as HTMLElement | null;
-
-    if (!receiptElement) {
-      setMessage('PDF로 저장할 영수증을 찾을 수 없습니다.');
-      return;
-    }
-
+    if (!receiptContainerRef.current) return;
     setIsSavingPdf(true);
-    try {
-      const result = await exportReceiptToPdf(receiptElement, receipt);
+    setStatusMessage(null);
 
-      if (result.canceled) {
-        setMessage('PDF 저장이 취소되었습니다.');
-      } else if (result.success) {
-        if (result.method === 'picker') {
-          setMessage(`PDF가 저장되었습니다: ${result.fileName}`);
+    try {
+      const result = await exportReceiptToPdf(receiptContainerRef.current, receipt);
+
+      if (result.success) {
+        if (result.isSecurityRestricted) {
+          setStatusMessage({
+            type: 'info',
+            text: '현재 미리보기 환경에서는 파일 저장 위치 선택 기능이 제한될 수 있습니다. 실제 웹사이트에서 다시 시도해주세요. (PDF 파일은 다운로드 폴더에 저장되었습니다)',
+          });
+          setTimeout(() => setStatusMessage(null), 7000);
         } else {
-          setMessage(`PDF가 다운로드되었습니다: ${result.fileName}`);
+          setStatusMessage({
+            type: 'success',
+            text: `[${result.fileName}] 파일이 성공적으로 저장되었습니다.`,
+          });
+          setTimeout(() => setStatusMessage(null), 4000);
         }
+      } else if (result.canceled) {
+        // User canceled file picker dialog - quiet exit
+        setStatusMessage(null);
       } else {
-        setMessage(result.error || 'PDF 저장에 실패했습니다.');
+        setStatusMessage({
+          type: 'error',
+          text: result.error || 'PDF 저장 중 문제가 발생했습니다.',
+        });
       }
+    } catch (err: any) {
+      console.error(err);
+      setStatusMessage({
+        type: 'error',
+        text: 'PDF 생성 중 오류가 발생했습니다.',
+      });
     } finally {
       setIsSavingPdf(false);
     }
   };
 
+  // Handle Printing (Isolated Window with standard window.print fallback)
+  const handlePrint = () => {
+    if (receiptContainerRef.current) {
+      printReceiptInIsolatedWindow(receiptContainerRef.current, receipt);
+    } else {
+      window.print();
+    }
+  };
+
   return (
     <>
+      {/* On-screen modal overlay (hidden during print via .no-print) */}
       <div className="no-print fixed inset-0 z-50 overflow-y-auto bg-slate-900/85 backdrop-blur-xs flex flex-col items-center justify-start p-2 sm:p-4">
-        <div className="sticky top-2 z-20 w-full max-w-5xl bg-slate-900 text-white rounded-xl shadow-2xl px-4 py-3 mb-3 flex items-center justify-between gap-3 border border-slate-700">
+        {/* Top Control Bar */}
+        <div className="sticky top-2 z-20 w-full max-w-4xl bg-slate-900 text-white rounded-xl shadow-2xl px-4 py-3 mb-3 flex flex-wrap items-center justify-between gap-3 border border-slate-700">
+          {/* Left: Back button & Document info */}
           <div className="flex items-center gap-3">
-            <button onClick={onClose} className="p-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white" title="뒤로 가기">
+            <button
+              onClick={onClose}
+              className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-semibold rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 hover:text-white transition-colors cursor-pointer border border-slate-700"
+              title="뒤로 가기"
+            >
               <ArrowLeft className="w-4 h-4" />
+              <span>뒤로가기</span>
             </button>
             <div>
               <div className="flex items-center gap-2">
-                <span className="text-xs font-bold px-2 py-0.5 rounded bg-blue-600 text-white">발급번호: {receipt.receiptNo}</span>
-                <span className="text-xs text-slate-200 font-semibold">{receipt.donorName} ({receipt.taxYear}년도분)</span>
+                <span className="text-xs font-bold px-2 py-0.5 rounded bg-blue-600 text-white">
+                  발급번호 {receipt.receiptNo}
+                </span>
+                <span className="text-sm text-slate-100 font-bold">
+                  {receipt.donorName}
+                </span>
+                <span className="text-xs text-slate-300">
+                  ({receipt.taxYear}년도)
+                </span>
               </div>
-              <p className="text-[11px] text-slate-400 mt-0.5">A4 규격 (210mm × 297mm) 현행 법정 서식 미리보기</p>
+              <p className="text-[11px] text-slate-400 mt-0.5">
+                소득세법 시행규칙 [별지 제45호의2서식] &lt;개정 2026. 1. 2.&gt;
+              </p>
             </div>
           </div>
 
-          <div className="flex items-center gap-2">
-            <div className="hidden sm:flex items-center gap-1 bg-slate-800 rounded-lg p-1 border border-slate-700 text-xs">
-              <button onClick={() => setZoomLevel((z) => Math.max(70, z - 10))} className="p-1 text-slate-300 hover:text-white rounded hover:bg-slate-700" title="축소"><ZoomOut className="w-3.5 h-3.5" /></button>
-              <span className="font-mono text-[11px] px-1 text-slate-300 w-10 text-center">{zoomLevel}%</span>
-              <button onClick={() => setZoomLevel((z) => Math.min(130, z + 10))} className="p-1 text-slate-300 hover:text-white rounded hover:bg-slate-700" title="확대"><ZoomIn className="w-3.5 h-3.5" /></button>
-            </div>
-
+          {/* Right: Action Buttons [PDF 저장], [인쇄], [닫기] */}
+          <div className="flex items-center gap-2.5">
+            {/* [PDF 저장] Button */}
             <button
-              type="button"
               onClick={handleSavePdf}
               disabled={isSavingPdf}
-              className="inline-flex items-center gap-2 px-4 py-2 text-sm font-bold bg-emerald-600 hover:bg-emerald-500 disabled:opacity-60 disabled:cursor-wait text-white rounded-lg shadow-md"
-              title="PDF 저장 - 저장 위치와 파일명을 선택합니다"
+              className="inline-flex items-center gap-2 px-4 py-2.5 text-sm font-bold bg-emerald-600 hover:bg-emerald-500 active:bg-emerald-700 disabled:bg-slate-700 text-white rounded-lg shadow-lg hover:shadow-emerald-500/25 transition-all cursor-pointer ring-2 ring-emerald-400/40"
+              title="기부금영수증을 PDF 파일로 저장"
             >
-              {isSavingPdf ? <Loader2 className="w-4 h-4 animate-spin" /> : <FileDown className="w-4 h-4" />}
-              <span>{isSavingPdf ? '저장 중...' : 'PDF 저장'}</span>
+              {isSavingPdf ? (
+                <>
+                  <Loader2 className="w-4 h-4 animate-spin text-emerald-200" />
+                  <span>PDF 생성 중...</span>
+                </>
+              ) : (
+                <>
+                  <Download className="w-4 h-4 text-emerald-100" />
+                  <span>PDF 저장</span>
+                </>
+              )}
             </button>
 
+            {/* [인쇄] Button */}
             <button
-              type="button"
               onClick={handlePrint}
-              className="inline-flex items-center gap-2 px-5 py-2 text-sm font-bold bg-blue-600 hover:bg-blue-500 text-white rounded-lg shadow-md ring-1 ring-blue-400/30"
-              title="Windows/Chrome 인쇄 설정창 열기"
+              disabled={isSavingPdf}
+              className="inline-flex items-center gap-2 px-4 py-2.5 text-sm font-bold bg-blue-600 hover:bg-blue-500 active:bg-blue-700 disabled:bg-slate-700 text-white rounded-lg shadow-lg hover:shadow-blue-500/25 transition-all cursor-pointer ring-2 ring-blue-400/40"
+              title="기부금영수증 인쇄 (프린터 출력)"
             >
-              <Printer className="w-4 h-4" />
+              <Printer className="w-4 h-4 text-blue-100" />
               <span>인쇄</span>
             </button>
 
-            <button onClick={onClose} className="p-2 text-slate-400 hover:text-white rounded-lg hover:bg-slate-800" title="닫기">
+            {/* [닫기] Button */}
+            <button
+              onClick={onClose}
+              className="p-2 text-slate-400 hover:text-white rounded-lg hover:bg-slate-800 transition-colors cursor-pointer ml-1"
+              title="닫기"
+            >
               <X className="w-5 h-5" />
             </button>
           </div>
         </div>
 
-        {message && (
-          <div className="no-print w-full max-w-5xl mb-3 px-4 py-2 rounded-lg bg-slate-800 border border-slate-600 text-slate-100 text-xs text-center">
-            {message}
+        {/* Status Toast Alert */}
+        {statusMessage && (
+          <div
+            className={`w-full max-w-4xl mb-3 px-4 py-2.5 rounded-lg text-xs flex items-center justify-between gap-2 shadow-lg transition-all animate-in fade-in slide-in-from-top-2 duration-200 ${
+              statusMessage.type === 'success'
+                ? 'bg-emerald-950/95 text-emerald-100 border border-emerald-500'
+                : statusMessage.type === 'error'
+                ? 'bg-red-950/95 text-red-100 border border-red-500'
+                : 'bg-blue-950/95 text-blue-100 border border-blue-500'
+            }`}
+          >
+            <div className="flex items-center gap-2">
+              {statusMessage.type === 'success' && <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />}
+              {statusMessage.type === 'error' && <AlertCircle className="w-4 h-4 text-red-400 shrink-0" />}
+              <span className="font-medium">{statusMessage.text}</span>
+            </div>
+            <button
+              onClick={() => setStatusMessage(null)}
+              className="text-slate-300 hover:text-white text-xs px-1.5 py-0.5"
+            >
+              ✕
+            </button>
           </div>
         )}
 
-        <div className="w-full max-w-5xl mb-3 px-4 py-2 rounded-lg bg-slate-800/80 border border-slate-700 text-slate-200 text-xs text-center">
-          <strong>PDF 저장</strong>은 저장 위치와 파일명을 직접 선택합니다. <strong>인쇄</strong>는 Windows/Chrome의 실제 인쇄 설정창을 엽니다.
-        </div>
-
-        <div className="pb-16 flex justify-center w-full" style={{ transform: `scale(${zoomLevel / 100})`, transformOrigin: 'top center' }}>
-          <OfficialReceiptA4 receipt={receipt} printSettings={printSettings} isPreviewMode={true} />
+        {/* A4 Document Viewport */}
+        <div className="pb-16 flex justify-center w-full">
+          <OfficialReceiptA4
+            ref={receiptContainerRef}
+            receipt={receipt}
+            printSettings={printSettings}
+            isPreviewMode={true}
+          />
         </div>
       </div>
 
-      <div className="print-only-container">
-        <OfficialReceiptA4 receipt={receipt} printSettings={printSettings} isPreviewMode={false} />
+      {/* Dedicated Print Container for window.print() */}
+      <div className="print-only-container hidden">
+        <OfficialReceiptA4
+          receipt={receipt}
+          printSettings={printSettings}
+          isPreviewMode={false}
+        />
       </div>
     </>
   );
 };
+

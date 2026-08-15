@@ -6,99 +6,31 @@
   }
 }
 
-.official-table {
-  width: 100%;
-  border-collapse: collapse;
-  border: 0.35mm solid #000;
-  table-layout: fixed;
-}
-
-.official-table th,
-.official-table td {
-  border: 0.25mm solid #000;
-  padding: 1.7mm 1.5mm;
-  height: 8.5mm;
-  vertical-align: middle;
-  text-align: center;
-  overflow-wrap: anywhere;
-}
-
-.official-table th {
-  background: #f5f5f5;
-  font-weight: 700;
-}
-
-.official-table td {
-  background: #fff;
-}
-
-.official-table .mono {
-  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
-  letter-spacing: 0.01em;
-}
-
-.donation-table th,
-.donation-table td {
-  padding: 1.25mm 1mm;
-  height: 7.5mm;
-}
-
-.donation-table thead th {
-  height: 8mm;
-}
-
-.donation-table .total-row th,
-.donation-table .total-row td {
-  height: 9mm;
-  background: #fff;
-  font-weight: 700;
-}
-
-.signature-grid {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 18mm;
-  font-size: 9.5px;
-}
-
-.receipt-form {
-  width: 100%;
-}
-
-/* Keep the preview page and print page exactly A4. */
-.receipt-page {
-  flex: 0 0 auto;
-  overflow: hidden;
-}
-
+/* Print Specific Styles for A4 Legal Form */
 @media print {
   @page {
     size: A4 portrait;
     margin: 0;
   }
 
-  html,
-  body {
-    width: 210mm !important;
-    height: 297mm !important;
+  html, body {
+    width: 210mm;
+    height: 297mm;
     margin: 0 !important;
     padding: 0 !important;
-    background: #fff !important;
-    color: #000 !important;
+    background: #ffffff !important;
+    color: #000000 !important;
     -webkit-print-color-adjust: exact !important;
     print-color-adjust: exact !important;
   }
 
-  body * {
-    visibility: hidden !important;
-  }
-
-  .print-only-container,
-  .print-only-container * {
-    visibility: visible !important;
-  }
-
-  .no-print {
+  /* Hide everything on screen except print container */
+  .no-print,
+  nav,
+  header,
+  aside,
+  button,
+  footer {
     display: none !important;
   }
 
@@ -111,24 +43,15 @@
     height: 297mm !important;
     margin: 0 !important;
     padding: 0 !important;
-    background: #fff !important;
-  }
-
-  .print-only-container .receipt-page {
-    width: 210mm !important;
-    height: 297mm !important;
-    min-height: 297mm !important;
-    margin: 0 !important;
-    border: none !important;
     box-shadow: none !important;
-    transform-origin: top left !important;
-    page-break-after: avoid !important;
-    page-break-inside: avoid !important;
+    background: #ffffff !important;
   }
-}
 
-@media screen {
-  .print-only-container {
-    display: none;
+  .receipt-page {
+    box-shadow: none !important;
+    border: none !important;
+    margin: 0 auto !important;
+    page-break-inside: avoid !important;
+    page-break-after: avoid !important;
   }
 }

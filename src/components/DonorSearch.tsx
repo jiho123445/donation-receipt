@@ -199,8 +199,9 @@ export const DonorSearch: React.FC<DonorSearchProps> = ({
             <span>검색</span>
           </button>
         </form>
+      </div>
 
-        {/* 3. Search Results State */}
+      {/* 3. Search Results State */}
 
       {/* CASE A: No results found */}
       {searchedName && matchedDonors.length === 0 && (
@@ -441,7 +442,6 @@ export const DonorSearch: React.FC<DonorSearchProps> = ({
           </div>
         </div>
       )}
-        </div>
 
       {/* 4. Bottom Quick Action Bar */}
       <div className="bg-slate-50 p-4 rounded-xl border border-slate-200 shadow-2xs">

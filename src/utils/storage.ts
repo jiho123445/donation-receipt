@@ -12,9 +12,9 @@ export const DEFAULT_ORG_INFO: OrganizationInfo = {
   businessContent: '사회복지사업',
   registrationNo: '',
   bizNo: '',
-  designationInfo: '',
-  donationType: '',
-  donationCode: '',
+  designationInfo: '소득세법 시행령 제80조제1항제5호, 법인세법 시행령 제39조제1항제1호바목 공익법인',
+  donationType: '지정기부금 (공익법인)',
+  donationCode: '40',
   defaultContent: '후원금',
 };
 
@@ -29,7 +29,13 @@ export function getOrganizationInfo(): OrganizationInfo {
     const raw = localStorage.getItem(ORG_STORAGE_KEY);
     if (!raw) return DEFAULT_ORG_INFO;
     const parsed = JSON.parse(raw);
-    return { ...DEFAULT_ORG_INFO, ...parsed };
+    return {
+      ...DEFAULT_ORG_INFO,
+      ...parsed,
+      designationInfo: parsed.designationInfo || DEFAULT_ORG_INFO.designationInfo,
+      donationType: parsed.donationType || DEFAULT_ORG_INFO.donationType,
+      donationCode: parsed.donationCode || DEFAULT_ORG_INFO.donationCode,
+    };
   } catch {
     return DEFAULT_ORG_INFO;
   }

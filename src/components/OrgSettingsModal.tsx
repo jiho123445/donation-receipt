@@ -51,7 +51,7 @@ export const OrgSettingsModal: React.FC<OrgSettingsModalProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-50 overflow-y-auto bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
+    <div className="fixed inset-0 z-60 overflow-y-auto bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
       <div className="bg-white rounded-xl shadow-2xl max-w-2xl w-full border border-slate-200 overflow-hidden animate-in fade-in zoom-in-95 duration-150">
         {/* Modal Header */}
         <div className="bg-slate-900 text-white px-6 py-4 flex items-center justify-between">
@@ -182,7 +182,7 @@ export const OrgSettingsModal: React.FC<OrgSettingsModalProps> = ({
             <div>
               <label className="block text-xs font-bold text-blue-900 mb-1 flex items-center justify-between">
                 <span>기부금 유형</span>
-                <span className="text-[11px] font-normal text-slate-500">공식 자료에 따라 직접 입력</span>
+                <span className="text-[11px] font-normal text-slate-500">예: 지정기부금 / 공익법인기부금</span>
               </label>
               <input
                 type="text"
@@ -196,7 +196,7 @@ export const OrgSettingsModal: React.FC<OrgSettingsModalProps> = ({
             <div>
               <label className="block text-xs font-bold text-blue-900 mb-1 flex items-center justify-between">
                 <span>기부금 코드</span>
-                <span className="text-[11px] font-normal text-slate-500">공식 자료에 따라 직접 입력</span>
+                <span className="text-[11px] font-normal text-slate-500">지정기부금/공익법인: 40</span>
               </label>
               <input
                 type="text"
@@ -252,10 +252,10 @@ export const OrgSettingsModal: React.FC<OrgSettingsModalProps> = ({
               </div>
               <div className="text-xs text-slate-600 flex-1">
                 <p className="font-semibold text-slate-800">
-                  {formData.sealImage ? '사용자 등록 직인 이미지 사용 중' : '직인 미등록 (실제 직인 이미지 등록 시에만 표시)'}
+                  {formData.sealImage ? '사용자 등록 직인 이미지 사용 중' : '표준 디지털 전자직인 (기본 적용)'}
                 </p>
                 <p className="text-[11px] text-slate-500 mt-0.5">
-                  실제 재단 직인 이미지(PNG)를 등록하면 영수증에 표시됩니다. 등록하지 않으면 가상 직인을 자동 생성하지 않습니다.
+                  별도의 고화질 투명 PNG 직인 도장 파일이 있으신 경우 등록하실 수 있습니다.
                 </p>
                 <div className="mt-2 flex items-center gap-2">
                   <label className="cursor-pointer inline-flex items-center gap-1 px-2.5 py-1 bg-white border border-slate-300 rounded text-xs font-medium text-slate-700 hover:bg-slate-50">
