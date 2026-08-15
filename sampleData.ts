@@ -1,0 +1,109 @@
+import { RawDonationRecord } from '../types/donation';
+
+export const INITIAL_SAMPLE_DONATIONS: RawDonationRecord[] = [
+  // 1. 홍길동 (홍천읍) - 2026년 3건 총 400,000원
+  {
+    id: 'sample-1',
+    donorName: '홍길동',
+    idNumber: '700101-1234567',
+    address: '강원특별자치도 홍천군 홍천읍 송학로 12',
+    date: '2026-01-15',
+    amount: 100000,
+    paymentMethod: '계좌이체',
+    donationType: '일반기부금',
+    donationCode: '40',
+    content: '후원금',
+  },
+  {
+    id: 'sample-2',
+    donorName: '홍길동',
+    idNumber: '700101-1234567',
+    address: '강원특별자치도 홍천군 홍천읍 송학로 12',
+    date: '2026-03-15',
+    amount: 100000,
+    paymentMethod: '계좌이체',
+    donationType: '일반기부금',
+    donationCode: '40',
+    content: '후원금',
+  },
+  {
+    id: 'sample-3',
+    donorName: '홍길동',
+    idNumber: '700101-1234567',
+    address: '강원특별자치도 홍천군 홍천읍 송학로 12',
+    date: '2026-05-15',
+    amount: 200000,
+    paymentMethod: '계좌이체',
+    donationType: '일반기부금',
+    donationCode: '40',
+    content: '후원금',
+  },
+
+  // 2. 김철수
+  {
+    id: 'sample-4',
+    donorName: '김철수',
+    idNumber: '820315-1098765',
+    address: '강원특별자치도 홍천군 화촌면 가리산길 45',
+    date: '2026-02-10',
+    amount: 200000,
+    paymentMethod: 'CMS',
+    donationType: '지정기부금',
+    donationCode: '40',
+    content: '정기후원금',
+  },
+
+  // 3. 이영희
+  {
+    id: 'sample-5',
+    donorName: '이영희',
+    idNumber: '881120-2345678',
+    address: '강원특별자치도 홍천군 북방면 영서로 78',
+    date: '2026-03-20',
+    amount: 50000,
+    paymentMethod: '계좌이체',
+    donationType: '지정기부금',
+    donationCode: '40',
+    content: '취약계층복지후원',
+  },
+
+  // 4. 동명이인 테스트: 홍길동 (서면) - 2026년 2건 총 200,000원
+  {
+    id: 'sample-6',
+    donorName: '홍길동',
+    idNumber: '750612-1456789',
+    address: '강원특별자치도 홍천군 서면 팔봉산로 102',
+    date: '2026-05-15',
+    amount: 100000,
+    paymentMethod: '계좌이체',
+    donationType: '지정기부금',
+    donationCode: '40',
+    content: '노인복지후원',
+  },
+  {
+    id: 'sample-7',
+    donorName: '홍길동',
+    idNumber: '750612-1456789',
+    address: '강원특별자치도 홍천군 서면 팔봉산로 102',
+    date: '2026-06-20',
+    amount: 100000,
+    paymentMethod: 'CMS',
+    donationType: '지정기부금',
+    donationCode: '40',
+    content: '노인복지후원',
+  },
+
+  // 5. 법인 기부자 샘플: (주)홍천희망기업
+  {
+    id: 'sample-8',
+    donorName: '(주)홍천희망기업',
+    idNumber: '221-81-98765',
+    address: '강원특별자치도 홍천군 홍천읍 연봉리 123-4',
+    date: '2026-04-10',
+    amount: 1000000,
+    paymentMethod: '계좌이체',
+    donationType: '지정기부금',
+    donationCode: '40',
+    content: '취약계층복지사업지원',
+  },
+];
