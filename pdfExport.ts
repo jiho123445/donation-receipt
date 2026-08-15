@@ -1,5 +1,5 @@
 import jsPDF from 'jspdf';
-import { toPng } from 'html-to-image';
+import { toCanvas } from 'html-to-image';
 import { IssuedReceiptRecord } from '../types/donation';
 
 export interface PdfExportResult {
@@ -24,115 +24,69 @@ export async function exportReceiptToPdf(
   const fileName = `기부금영수증_${sanitizedDonorName}_${sanitizedReceiptNo}.pdf`;
 
   try {
-    // Generate high-resolution image using native browser SVG/foreignObject rendering
-    // This fully supports modern CSS including Tailwind v4's OKLCH color model
-    const imgData = await toPng(receiptElement, {
-      pixelRatio: 2,
-      backgroundColor: '#ffffff',
-      cacheBust: true,
-      style: {
-        transform: 'none', // reset any preview zoom scale
-        transformOrigin: 'top left',
-      },
+    const exportHost = document.createElement('div');
+    exportHost.style.position = 'fixed';
+    exportHost.style.left = '0';
+    exportHost.style.top = '0';
+    exportHost.style.width = '210mm';
+    exportHost.style.height = '297mm';
+    exportHost.style.margin = '0';
+    exportHost.style.padding = '0';
+    exportHost.style.overflow = 'hidden';
+    exportHost.style.zIndex = '-2147483647';
+    exportHost.style.background = '#fff';
+    exportHost.style.pointerEvents = 'none';
+    const clone = receiptElement.cloneNode(true) as HTMLElement;
+    clone.removeAttribute('id');
+    Object.assign(clone.style, {
+      width: '210mm', height: '297mm', minHeight: '297mm', maxHeight: '297mm',
+      margin: '0', padding: '12mm 14mm', boxSizing: 'border-box',
+      transform: 'none', transformOrigin: 'top left', left: '0', top: '0',
+      position: 'relative', boxShadow: 'none', border: 'none'
     });
-
-    // Create jsPDF document with A4 dimensions (210mm x 297mm)
-    const pdf = new jsPDF({
-      orientation: 'portrait',
-      unit: 'mm',
-      format: 'a4',
-      compress: true,
-    });
-
-    // A4 dimensions
-    const pdfWidth = 210;
-    const pdfHeight = 297;
-
-    pdf.addImage(imgData, 'PNG', 0, 0, pdfWidth, pdfHeight, undefined, 'FAST');
-
-    const pdfBlob = pdf.output('blob');
-    const blobUrl = URL.createObjectURL(pdfBlob);
-
-    // If requested to open directly in a new window/tab for native preview and Save As (Ctrl+S)
-    if (openInNewWindow) {
-      window.open(blobUrl, '_blank');
-      return {
-        success: true,
-        fileName,
-        blobUrl,
-        method: 'download',
-      };
-    }
-
-    // 1. Try File System Access API (window.showSaveFilePicker)
-    // This allows the user to choose their preferred folder / location on their local computer!
-    if (
-      typeof window !== 'undefined' &&
-      'showSaveFilePicker' in window &&
-      typeof (window as any).showSaveFilePicker === 'function'
-    ) {
-      try {
-        const handle = await (window as any).showSaveFilePicker({
-          suggestedName: fileName,
-          types: [
-            {
-              description: 'PDF 문서 (*.pdf)',
-              accept: {
-                'application/pdf': ['.pdf'],
-              },
-            },
-          ],
-        });
-
-        const writableStream = await handle.createWritable();
-        await writableStream.write(pdfBlob);
-        await writableStream.close();
-
-        return {
-          success: true,
-          fileName,
-          blobUrl,
-          method: 'picker',
-        };
-      } catch (err: any) {
-        // If user canceled the save location dialog
-        if (err.name === 'AbortError') {
-          return {
-            success: false,
-            canceled: true,
-            fileName,
-            blobUrl,
-            method: 'picker',
-          };
-        }
-        // If showSaveFilePicker failed due to iframe sandbox permissions, fallback to standard download
-        console.warn('File System Access API not available in iframe sandbox, falling back to download:', err);
+    exportHost.appendChild(clone);
+    document.body.appendChild(exportHost);
+    try {
+      const canvas = await toCanvas(clone, {
+        pixelRatio: 1.5,
+        width: Math.ceil(210 * 96 / 25.4),
+        height: Math.ceil(297 * 96 / 25.4),
+        backgroundColor: '#fff',
+        cacheBust: false,
+        style: { width: '210mm', height: '297mm', margin: '0', transform: 'none', transformOrigin: 'top left' }
+      });
+      const pdf = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4', compress: true });
+      const jpegData = canvas.toDataURL('image/jpeg', 0.95);
+      pdf.addImage(jpegData, 'JPEG', 0, 0, 210, 297, undefined, 'FAST');
+      const pdfBlob = pdf.output('blob');
+      const blobUrl = URL.createObjectURL(pdfBlob);
+      if (openInNewWindow) {
+        window.open(blobUrl, '_blank');
+        return { success: true, fileName, blobUrl, method: 'download' };
       }
+      if (typeof window !== 'undefined' && 'showSaveFilePicker' in window && typeof (window as any).showSaveFilePicker === 'function') {
+        try {
+          const handle = await (window as any).showSaveFilePicker({
+            suggestedName: fileName,
+            types: [{ description: 'PDF 문서 (*.pdf)', accept: { 'application/pdf': ['.pdf'] } }],
+          });
+          const writable = await handle.createWritable();
+          await writable.write(pdfBlob);
+          await writable.close();
+          return { success: true, fileName, blobUrl, method: 'picker' };
+        } catch (err: any) {
+          if (err?.name === 'AbortError') return { success: false, canceled: true, fileName, blobUrl, method: 'picker' };
+        }
+      }
+      const link = document.createElement('a');
+      link.href = blobUrl; link.download = fileName;
+      document.body.appendChild(link); link.click(); document.body.removeChild(link);
+      setTimeout(() => URL.revokeObjectURL(blobUrl), 1000);
+      return { success: true, fileName, blobUrl, method: 'download' };
+    } finally {
+      exportHost.remove();
     }
-
-    // 2. Standard fallback: Blob URL Download
-    const link = document.createElement('a');
-    link.href = blobUrl;
-    link.download = fileName;
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-    // Release the Blob URL after handing it to the browser.
-    setTimeout(() => URL.revokeObjectURL(blobUrl), 1000);
-
-    return {
-      success: true,
-      fileName,
-      blobUrl,
-      method: 'download',
-    };
   } catch (error: any) {
-    console.error('PDF Generation failed:', error);
-    return {
-      success: false,
-      fileName,
-      method: 'download',
-      error: error?.message || 'PDF 생성 도중 오류가 발생했습니다.',
-    };
+    return { success: false, fileName, method: 'download', error: error?.message || 'PDF 생성 도중 오류가 발생했습니다.' };
   }
 }

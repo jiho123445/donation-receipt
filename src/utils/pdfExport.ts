@@ -1,5 +1,5 @@
 import jsPDF from 'jspdf';
-import { toPng } from 'html-to-image';
+import { toCanvas } from 'html-to-image';
 import { IssuedReceiptRecord } from '../types/donation';
 
 export interface PdfExportResult {
@@ -16,30 +16,77 @@ export interface PdfExportResult {
  * Generate A4 PDF Blob (210mm x 297mm, optimized high-resolution rendering)
  */
 export async function generateReceiptPdfBlob(receiptElement: HTMLElement): Promise<Blob> {
-  const imgData = await toPng(receiptElement, {
-    pixelRatio: 2,
-    backgroundColor: '#ffffff',
-    cacheBust: true,
-    style: {
-      transform: 'none',
-      transformOrigin: 'top left',
-      boxShadow: 'none',
-      border: 'none',
-    },
-  });
+  // PDF export must not inherit the preview's zoom, print offset, centering margin,
+  // or transform. Capture a dedicated A4-sized clone instead.
+  const exportHost = document.createElement('div');
+  exportHost.style.position = 'fixed';
+  exportHost.style.left = '0';
+  exportHost.style.top = '0';
+  exportHost.style.width = '210mm';
+  exportHost.style.height = '297mm';
+  exportHost.style.margin = '0';
+  exportHost.style.padding = '0';
+  exportHost.style.overflow = 'hidden';
+  exportHost.style.zIndex = '-2147483647';
+  exportHost.style.background = '#ffffff';
+  exportHost.style.pointerEvents = 'none';
 
-  const pdf = new jsPDF({
-    orientation: 'portrait',
-    unit: 'mm',
-    format: 'a4',
-    compress: true,
-  });
+  const clone = receiptElement.cloneNode(true) as HTMLElement;
+  clone.removeAttribute('id');
+  clone.style.width = '210mm';
+  clone.style.height = '297mm';
+  clone.style.minHeight = '297mm';
+  clone.style.maxHeight = '297mm';
+  clone.style.margin = '0';
+  clone.style.padding = '12mm 14mm';
+  clone.style.boxSizing = 'border-box';
+  clone.style.transform = 'none';
+  clone.style.transformOrigin = 'top left';
+  clone.style.left = '0';
+  clone.style.top = '0';
+  clone.style.position = 'relative';
+  clone.style.boxShadow = 'none';
+  clone.style.border = 'none';
 
-  const pdfWidth = 210;
-  const pdfHeight = 297;
+  exportHost.appendChild(clone);
+  document.body.appendChild(exportHost);
 
-  pdf.addImage(imgData, 'PNG', 0, 0, pdfWidth, pdfHeight, undefined, 'FAST');
-  return pdf.output('blob');
+  try {
+    // 1.5x is a deliberate compromise: substantially less raster work than 2x,
+    // while remaining high enough for an A4 text-heavy official form.
+    const canvas = await toCanvas(clone, {
+      pixelRatio: 1.5,
+      width: Math.ceil(210 * 96 / 25.4),
+      height: Math.ceil(297 * 96 / 25.4),
+      backgroundColor: '#ffffff',
+      cacheBust: false,
+      style: {
+        width: '210mm',
+        height: '297mm',
+        margin: '0',
+        transform: 'none',
+        transformOrigin: 'top left',
+        boxShadow: 'none',
+        border: 'none',
+      },
+    });
+
+    const pdf = new jsPDF({
+      orientation: 'portrait',
+      unit: 'mm',
+      format: 'a4',
+      compress: true,
+    });
+
+    // JPEG is considerably lighter than embedding a full-page PNG while keeping
+    // text/lines crisp at this raster scale.  The original HTML remains unchanged.
+    const jpegData = canvas.toDataURL('image/jpeg', 0.95);
+    pdf.addImage(jpegData, 'JPEG', 0, 0, 210, 297, undefined, 'FAST');
+
+    return pdf.output('blob');
+  } finally {
+    exportHost.remove();
+  }
 }
 
 /**
@@ -100,6 +147,7 @@ export async function exportReceiptToPdf(
           document.body.appendChild(link);
           link.click();
           document.body.removeChild(link);
+          setTimeout(() => URL.revokeObjectURL(blobUrl), 1000);
 
           return {
             success: true,
