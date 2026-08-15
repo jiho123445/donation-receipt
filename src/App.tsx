@@ -338,16 +338,6 @@ export default function App() {
         />
       )}
 
-      {/* Dedicated Print container if window.print() called directly */}
-      {previewReceipt && (
-        <div className="print-only-container hidden">
-          <OfficialReceiptA4
-            receipt={previewReceipt}
-            printSettings={printSettings}
-            isPreviewMode={false}
-          />
-        </div>
-      )}
     </div>
   );
 }
