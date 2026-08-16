@@ -4,9 +4,9 @@ import { RawDonationRecord, IssuedReceiptRecord } from '../types/donation';
 // Flexible column matcher
 const COLUMN_SYNONYMS = {
   donorName: ['성명', '성명후원자명', '이름', '후원자명', '기부자명', '기부자', '후원자', '회원명', '이름상호', '상호'],
-  idNumber: ['주민등록번호', '주민번호', '주민번호/사업자번호', '사업자번호', '사업자등록번호', '식별번호', '고유식별번호', '주민/사업자번호'],
-  address: ['주소', '소재지', '거주지', '기부자주소', '도로명주소', '본점소재지', '사업장소재지'],
-  date: ['후원일', '후원일자', '후원연월일', '납부일', '납부일자', '납부연월일', '연월일', '기부일', '기부일자', '기부연월일', '일자', '날짜', '입금일', '입금일자', '입금연월일'],
+  idNumber: ['주민등록번호', '주민번호', '주민등록번호/사업자번호', '주민번호/사업자번호', '주민/사업자번호', '주민사업자번호', '사업자번호', '사업자등록번호', '식별번호', '고유식별번호'],
+  address: ['주소', '주소(소재지)', '주소 / 소재지', '소재지', '거주지', '기부자주소', '기부자 주소', '도로명주소', '본점소재지', '사업장소재지'],
+  date: ['후원일', '후원일자', '후원연월일', '납부일', '납부일자', '납부연월일', '납부연월', '연월일', '기부일', '기부일자', '기부연월일', '일자', '날짜', '입금일', '입금일자', '입금연월일'],
   amount: ['후원금', '후원금액', '후원금액원', '납부금액', '납부금액원', '금액', '금액원', '기부금액', '기부금', '입금액', '수납액', '납부액'],
   paymentMethod: ['후원방법', '납부방법', '결제방법', '이체방법', '수단', '결제수단', '구분방법'],
   donationType: ['기부금유형', '기부유형', '유형', '기부구분', '구분'],
@@ -24,14 +24,39 @@ function normalizeHeaderName(header: string): string {
 
 function findMatchingField(header: string): keyof typeof COLUMN_SYNONYMS | null {
   const clean = normalizeHeaderName(header);
+  if (!clean) return null;
+
+  // 1단계: 완전일치를 항상 최우선으로 검사합니다.
+  // (v13 수정) 기존에는 완전일치와 부분일치를 같은 우선순위로 검사해서,
+  // 예를 들어 '기부금유형' 헤더가 amount의 부분일치 동의어인 '기부금'과 먼저 매칭되어
+  // '기부금유형'/'기부금코드' 열이 '후원금액' 열로 잘못 인식되고,
+  // 실제 후원금액을 텍스트/코드값으로 덮어쓰는 심각한 데이터 훼손 버그가 있었습니다.
+  // '기부금유형'과 '기부금코드'는 각 필드의 완전일치 동의어로 이미 등록되어 있으므로,
+  // 완전일치를 먼저 검사하면 이 문제가 근본적으로 해결됩니다.
   for (const [field, synonyms] of Object.entries(COLUMN_SYNONYMS)) {
     for (const syn of synonyms) {
-      if (clean === normalizeHeaderName(syn) || clean.includes(normalizeHeaderName(syn))) {
+      if (clean === normalizeHeaderName(syn)) {
         return field as keyof typeof COLUMN_SYNONYMS;
       }
     }
   }
-  return null;
+
+  // 2단계: 완전일치가 없을 때만 부분일치를 검사하되,
+  // 여러 필드가 동시에 부분일치할 경우 더 길고 구체적인 동의어를 우선합니다.
+  // (예: '기부금유형(상세)'처럼 완전일치는 아니지만 '기부금유형'을 포함하는 헤더가 있다면,
+  // 짧고 일반적인 amount의 '기부금'보다 donationType의 '기부금유형'을 우선 채택)
+  let bestField: keyof typeof COLUMN_SYNONYMS | null = null;
+  let bestLen = 0;
+  for (const [field, synonyms] of Object.entries(COLUMN_SYNONYMS)) {
+    for (const syn of synonyms) {
+      const normSyn = normalizeHeaderName(syn);
+      if (normSyn && clean.includes(normSyn) && normSyn.length > bestLen) {
+        bestLen = normSyn.length;
+        bestField = field as keyof typeof COLUMN_SYNONYMS;
+      }
+    }
+  }
+  return bestField;
 }
 
 function inferPeriodFromFileName(fileName: string): string {
@@ -170,6 +195,38 @@ export async function parseDonationExcel(file: File): Promise<ParseResult> {
     throw new Error('엑셀 열 이름을 인식할 수 없습니다. 최소한 성명과 후원금액 열이 포함되어 있는지 확인해주세요.');
   }
 
+  // 안전장치: 같은 필드(예: amount)가 실수로 두 개 이상의 열에 매칭되면
+  // 나중 열이 앞선 열의 값을 조용히 덮어쓰는 것을 방지하기 위해,
+  // 가장 먼저(왼쪽) 매칭된 열만 유지하고 이후 중복 매칭은 무시합니다.
+  {
+    const seenFields = new Set<keyof typeof COLUMN_SYNONYMS>();
+    const dedupedMap: Record<number, keyof typeof COLUMN_SYNONYMS> = {};
+    Object.keys(bestHeaderMap)
+      .map((k) => parseInt(k, 10))
+      .sort((a, b) => a - b)
+      .forEach((colIdx) => {
+        const field = bestHeaderMap[colIdx];
+        if (seenFields.has(field)) return; // 중복 필드는 첫 매칭만 사용
+        seenFields.add(field);
+        dedupedMap[colIdx] = field;
+      });
+    bestHeaderMap = dedupedMap;
+  }
+
+  // 재단 표준 9열 서식은 헤더 인식이 일부 실패하더라도 위치로 안전하게 보완합니다.
+  // A 성명 / B 주민(사업자)번호 / C 주소 / D 후원일자 / E 후원금액 / F 후원방법 / G 유형 / H 코드 / I 내용
+  if (headerRowIndex >= 0) {
+    const standardPositions: Array<[number, keyof typeof COLUMN_SYNONYMS]> = [
+      [0, 'donorName'], [1, 'idNumber'], [2, 'address'], [3, 'date'], [4, 'amount'],
+      [5, 'paymentMethod'], [6, 'donationType'], [7, 'donationCode'], [8, 'content'],
+    ];
+    for (const [col, field] of standardPositions) {
+      if (rawJson[headerRowIndex]?.[col] !== undefined && bestHeaderMap[col] === undefined) {
+        bestHeaderMap[col] = field;
+      }
+    }
+  }
+
   // 필수 데이터는 성명/후원금액만 사용합니다.
   // 주민/사업자번호, 주소, 후원일자, 후원방법, 기부금유형, 기부금코드, 기부내용은 선택 항목입니다.
   // 후원일자가 없으면 파일명에서 YYYY년 M월 / YYYY-MM / YYYYMM 형식의 월을 추정해 period로 저장합니다.
@@ -280,6 +337,30 @@ export async function parseDonationExcel(file: File): Promise<ParseResult> {
           content: '후원금',
         });
       }
+    }
+  }
+
+  // 표준 서식의 헤더가 병합/서식 때문에 비정상적으로 읽힌 경우에도
+  // A열 성명 + E열 금액이 있으면 데이터를 살립니다. 주소/번호/날짜도 같은 행에서 함께 보존합니다.
+  if (records.length === 0 && rawJson[headerRowIndex + 1]) {
+    for (let r = headerRowIndex + 1; r < rawJson.length; r++) {
+      const row = rawJson[r] || [];
+      const donorName = String(row[0] ?? '').trim();
+      const amount = parseExcelAmount(row[4]);
+      if (!donorName || amount <= 0) continue;
+      records.push({
+        id: `rec-${Date.now()}-${r}-${Math.random().toString(36).substring(2, 6)}`,
+        donorName,
+        idNumber: String(row[1] ?? '').trim(),
+        address: String(row[2] ?? '').trim(),
+        date: parseExcelDate(row[3]),
+        period: inferredPeriod || undefined,
+        amount,
+        paymentMethod: String(row[5] ?? '').trim() || '계좌이체',
+        donationType: String(row[6] ?? '').trim() || undefined,
+        donationCode: String(row[7] ?? '').trim() || undefined,
+        content: String(row[8] ?? '').trim() || '후원금',
+      });
     }
   }
 

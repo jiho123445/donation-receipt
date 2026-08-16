@@ -1,7 +1,7 @@
 import React, { useState, useMemo } from 'react';
 import { Search, UserCheck, Users, Calendar, FileText, CheckCircle2, AlertCircle, ArrowRight, Upload, Building2, Download } from 'lucide-react';
 import { RawDonationRecord, DonorGroup, OrganizationInfo } from '../types/donation';
-import { formatKRW, numberToHangulAmount, maskIdNumber } from '../utils/hangulCurrency';
+import { formatKRW, numberToHangulAmount } from '../utils/hangulCurrency';
 import { downloadSampleExcelTemplate } from '../utils/excelParser';
 
 interface DonorSearchProps {
@@ -28,38 +28,164 @@ export const DonorSearch: React.FC<DonorSearchProps> = ({
   const [selectedDonorKey, setSelectedDonorKey] = useState<string | null>(null);
   const [selectedTaxYear, setSelectedTaxYear] = useState<number>(2026);
 
-  // Group raw donations into unique donors (keyed by Name + (ID or Address))
+  // Group raw donations into unique donors.
+  // 이름이 같더라도 주민/사업자번호가 서로 다르면 실제 동명이인으로 분리합니다.
+  // 반대로 한쪽 자료에만 식별번호/주소가 있고 다른 자료가 비어 있으면
+  // 동일인 후보로 묶어 누락된 프로필 정보를 보강합니다.
   const donorGroups = useMemo(() => {
-    const map = new Map<string, DonorGroup>();
+    const norm = (v?: string) => (v || '').trim().toLowerCase().replace(/\s+/g, ' ');
+    const normId = (v?: string) => norm(v).replace(/[-\s]/g, '');
+    const isMissing = (v?: string) => {
+      const value = norm(v);
+      return !value || value === '-' || value === '—' || value === '미등록' || value === '없음' || value === '미기재' || value === '미입력';
+    };
+    const cleanId = (v?: string) => isMissing(v) ? '' : (v || '').trim();
+    const cleanAddress = (v?: string) => isMissing(v) ? '' : (v || '').trim();
+    const isBusinessId = (v?: string) => /^\d{10}$/.test(normId(v));
+    const isBusinessName = (name?: string) => /\(주\)|주식회사|법인|유한회사|사단법인|재단법인|학교법인|협동조합/.test(name || '');
 
-    for (const rec of donations) {
-      // Create a composite identifier
-      const key = `${rec.donorName.trim()}__${rec.idNumber?.trim() || rec.address?.trim() || 'default'}`;
-      const recYear = parseInt((rec.date || rec.period || '').split('-')[0], 10) || 2026;
+    const yearsOf = (rec: RawDonationRecord) => {
+      const y = parseInt((rec.date || rec.period || '').slice(0, 4), 10);
+      return Number.isFinite(y) ? y : 2026;
+    };
 
-      if (!map.has(key)) {
-        map.set(key, {
-          donorKey: key,
-          donorName: rec.donorName.trim(),
-          idNumber: rec.idNumber?.trim() || '',
-          address: rec.address?.trim() || '',
-          isBusiness: rec.donorName.includes('(주)') || rec.donorName.includes('주식회사') || rec.donorName.includes('법인') || /^\d{3}-\d{2}-\d{5}$/.test(rec.idNumber || ''),
-          donations: [rec],
-          years: [recYear],
-          totalAllTime: rec.amount,
-        });
-      } else {
-        const group = map.get(key)!;
-        group.donations.push(rec);
-        if (!group.years.includes(recYear)) {
-          group.years.push(recYear);
+    const makeGroup = (rec: RawDonationRecord, index: number): DonorGroup => ({
+      donorKey: `${rec.donorName.trim()}__${normId(rec.idNumber) || norm(rec.address) || `group-${index}`}`,
+      donorName: rec.donorName.trim(),
+      idNumber: cleanId(rec.idNumber),
+      address: cleanAddress(rec.address),
+      isBusiness: isBusinessId(cleanId(rec.idNumber)) || isBusinessName(rec.donorName),
+      donations: [],
+      years: [],
+      totalAllTime: 0,
+    });
+
+    const addToGroup = (group: DonorGroup, rec: RawDonationRecord) => {
+      group.donations.push(rec);
+      const incomingId = cleanId(rec.idNumber);
+      const incomingAddress = cleanAddress(rec.address);
+      if (!group.idNumber && incomingId) group.idNumber = incomingId;
+      if (!group.address && incomingAddress) group.address = incomingAddress;
+      if (incomingId) {
+        group.isBusiness = isBusinessId(incomingId) || isBusinessName(group.donorName);
+      }
+      const year = yearsOf(rec);
+      if (!group.years.includes(year)) group.years.push(year);
+      group.totalAllTime += Number(rec.amount || 0);
+    };
+
+    // 1차: 성명별로 실제 식별번호가 있는 사람을 분리합니다.
+    const byName = new Map<string, RawDonationRecord[]>();
+    donations.forEach((rec) => {
+      const key = norm(rec.donorName);
+      if (!key) return;
+      const arr = byName.get(key) || [];
+      arr.push(rec);
+      byName.set(key, arr);
+    });
+
+    const groups: DonorGroup[] = [];
+    let groupIndex = 0;
+
+    for (const [, recordsByName] of byName) {
+      const identified = new Map<string, RawDonationRecord[]>();
+      const blankId: RawDonationRecord[] = [];
+
+      for (const rec of recordsByName) {
+        const id = normId(rec.idNumber);
+        if (id) {
+          const arr = identified.get(id) || [];
+          arr.push(rec);
+          identified.set(id, arr);
+        } else {
+          blankId.push(rec);
         }
-        group.totalAllTime += rec.amount;
+      }
+
+      // 식별번호가 전혀 없는 이름은 주소 기준으로 그룹화합니다.
+      // 주소가 하나뿐이면 주소 없는 자료도 그 그룹으로 편입합니다.
+      if (identified.size === 0) {
+        const addressGroups = new Map<string, DonorGroup>();
+        const noAddress: RawDonationRecord[] = [];
+        for (const rec of blankId) {
+          const a = norm(rec.address);
+          if (a) {
+            let group = addressGroups.get(a);
+            if (!group) {
+              group = makeGroup(rec, groupIndex++);
+              addressGroups.set(a, group);
+              groups.push(group);
+            }
+            addToGroup(group, rec);
+          } else {
+            noAddress.push(rec);
+          }
+        }
+        const onlyAddressGroup = addressGroups.size === 1 ? Array.from(addressGroups.values())[0] : null;
+        if (onlyAddressGroup) {
+          noAddress.forEach((r) => addToGroup(onlyAddressGroup, r));
+        } else {
+          noAddress.forEach((r) => {
+            const group = makeGroup(r, groupIndex++);
+            addToGroup(group, r);
+            groups.push(group);
+          });
+        }
+        continue;
+      }
+
+      // 식별번호가 정확히 하나라면, 번호가 없는 같은 이름 자료는
+      // 기존에 누락된 동일인의 자료로 보고 그 그룹에 편입합니다.
+      if (identified.size === 1) {
+        const onlyRecords = Array.from(identified.values())[0];
+        const group = makeGroup(onlyRecords[0], groupIndex++);
+        onlyRecords.forEach((r) => addToGroup(group, r));
+        blankId.forEach((r) => addToGroup(group, r));
+        groups.push(group);
+        continue;
+      }
+
+      // 식별번호가 2개 이상이면 실제 동명이인일 수 있으므로 각각 분리합니다.
+      // 번호 없는 자료는 주소가 정확히 일치하는 그룹이 하나일 때만 해당 그룹에 편입합니다.
+      const idGroups = new Map<string, DonorGroup>();
+      for (const [id, recs] of identified) {
+        const group = makeGroup(recs[0], groupIndex++);
+        recs.forEach((r) => addToGroup(group, r));
+        idGroups.set(id, group);
+        groups.push(group);
+      }
+
+      for (const rec of blankId) {
+        const ra = norm(cleanAddress(rec.address));
+        const addressMatches = ra
+          ? Array.from(idGroups.values()).filter((g) => norm(g.address) === ra)
+          : [];
+        if (addressMatches.length === 1) {
+          addToGroup(addressMatches[0], rec);
+          continue;
+        }
+
+        const group = makeGroup(rec, groupIndex++);
+        addToGroup(group, rec);
+        groups.push(group);
       }
     }
 
-    return Array.from(map.values());
+    return groups;
   }, [donations]);
+
+  const getIdLabel = (donor: DonorGroup) => {
+    const raw = (donor.idNumber || '').trim();
+    if (!raw || raw === '-' || raw === '미등록') return '식별번호: 미등록';
+    const compact = raw.replace(/[-\s]/g, '');
+    const business = /^\d{10}$/.test(compact) || donor.isBusiness;
+    const formatted = business && /^\d{10}$/.test(compact)
+      ? `${compact.slice(0, 3)}-${compact.slice(3, 5)}-${compact.slice(5)}`
+      : /^\d{13}$/.test(compact)
+        ? `${compact.slice(0, 6)}-${compact.slice(6)}`
+        : raw;
+    return business ? `사업자등록번호: ${formatted}` : `주민등록번호: ${formatted}`;
+  };
 
   // Handle Search Submission
   const handleSearch = (nameToSearch?: string) => {
@@ -75,16 +201,41 @@ export const DonorSearch: React.FC<DonorSearchProps> = ({
       // Auto pick latest year from this donor's donations
       const latestYear = Math.max(...matched[0].years, 2026);
       setSelectedTaxYear(latestYear);
+      return;
+    }
+
+    // (v13 수정) 완전일치가 없더라도, 이름 일부 검색(부분일치) 결과가 정확히 1명뿐이면
+    // 화면에 아무것도 표시되지 않던 문제(빈 화면)를 막기 위해 그 1명도 바로 선택합니다.
+    if (matched.length === 0) {
+      const partial = donorGroups.filter((g) => g.donorName.toLowerCase().includes(target.toLowerCase()));
+      if (partial.length === 1) {
+        setSelectedDonorKey(partial[0].donorKey);
+        const latestYear = Math.max(...partial[0].years, 2026);
+        setSelectedTaxYear(latestYear);
+      }
     }
   };
 
-  // Find all matched donors for current search query
+  // Find all matched donors for current search query (이름 일부만 포함해도 검색됨)
   const matchedDonors = useMemo(() => {
     if (!searchedName) return [];
     return donorGroups.filter((g) =>
       g.donorName.toLowerCase().includes(searchedName.toLowerCase())
     );
   }, [searchedName, donorGroups]);
+
+  // (v13 수정) '동명이인'은 이름이 정확히 같은 경우에만 의미가 있으므로 별도로 구분합니다.
+  // matchedDonors(부분일치)를 그대로 '동명이인'으로 표기하면, 예를 들어 '철수'로 검색했을 때
+  // 이름이 전혀 다른 '김철수'와 '박철수민'까지 동명이인처럼 묶여 보이는 문제가 있었습니다.
+  const exactMatches = useMemo(() => {
+    if (!searchedName) return [];
+    return donorGroups.filter((g) => g.donorName.toLowerCase() === searchedName.toLowerCase());
+  }, [searchedName, donorGroups]);
+
+  // 실제로 이름이 완전히 같은 후원자가 2명 이상일 때만 '동명이인' 케이스로 취급합니다.
+  const isHomonymCase = exactMatches.length > 1;
+  // 동명이인이 아니면서(=이름이 다른 사람들의 부분일치 검색이거나, 정확일치 1명 이하) 여러 결과가 있는 경우.
+  const searchResultDonors = isHomonymCase ? exactMatches : matchedDonors;
 
   // Selected donor group object
   const activeDonor = useMemo(() => {
@@ -230,15 +381,21 @@ export const DonorSearch: React.FC<DonorSearchProps> = ({
         </div>
       )}
 
-      {/* CASE B: Multiple Matches (동명이인 처리) */}
-      {searchedName && matchedDonors.length > 1 && !activeDonor && (
-        <div className="bg-white p-6 rounded-xl border-2 border-amber-300 shadow-xs space-y-4">
-          <div className="flex items-center gap-2 text-amber-900 pb-2 border-b border-amber-200">
-            <Users className="w-5 h-5 text-amber-600" />
+      {/* CASE B: Multiple Matches (동명이인 처리 또는 부분일치 검색결과) */}
+      {searchedName && searchResultDonors.length > 1 && !activeDonor && (
+        <div className={`bg-white p-6 rounded-xl border-2 shadow-xs space-y-4 ${isHomonymCase ? 'border-amber-300' : 'border-slate-200'}`}>
+          <div className={`flex items-center gap-2 pb-2 border-b ${isHomonymCase ? 'text-amber-900 border-amber-200' : 'text-slate-800 border-slate-200'}`}>
+            <Users className={`w-5 h-5 ${isHomonymCase ? 'text-amber-600' : 'text-slate-500'}`} />
             <div>
-              <h3 className="text-sm font-bold">동명이인이 있습니다. 정확한 후원자를 선택하세요.</h3>
-              <p className="text-xs text-amber-700">
-                동일한 성명의 후원자가 {matchedDonors.length}명 검색되었습니다. 주소와 후원내역을 확인 후 선택해주세요.
+              <h3 className="text-sm font-bold">
+                {isHomonymCase
+                  ? '동명이인이 있습니다. 정확한 후원자를 선택하세요.'
+                  : `'${searchedName}'이(가) 포함된 후원자가 여러 명 검색되었습니다.`}
+              </h3>
+              <p className={`text-xs ${isHomonymCase ? 'text-amber-700' : 'text-slate-500'}`}>
+                {isHomonymCase
+                  ? `동일한 성명의 후원자가 ${searchResultDonors.length}명 검색되었습니다. 주소와 후원내역을 확인 후 선택해주세요.`
+                  : `이름이 정확히 같지는 않지만 검색어를 포함하는 후원자 ${searchResultDonors.length}명입니다. 원하는 후원자를 선택해주세요.`}
               </p>
             </div>
           </div>
@@ -256,7 +413,7 @@ export const DonorSearch: React.FC<DonorSearchProps> = ({
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-200">
-                {matchedDonors.map((donor) => {
+                {searchResultDonors.map((donor) => {
                   const latestDate = donor.donations
                     .map((d) => d.date)
                     .sort()
@@ -279,7 +436,7 @@ export const DonorSearch: React.FC<DonorSearchProps> = ({
                       </td>
                       <td className="px-4 py-3 font-bold text-slate-900">{donor.donorName}</td>
                       <td className="px-4 py-3 text-slate-600 max-w-[200px] truncate">{donor.address ? donor.address.split(" ").slice(0, 3).join(" ") + (donor.address.split(" ").length > 3 ? "…" : "") : "-"}</td>
-                      <td className="px-4 py-3 text-slate-500 font-mono">{maskIdNumber(donor.idNumber)}</td>
+                      <td className="px-4 py-3 text-slate-500 font-mono">{getIdLabel(donor).replace(/^.*?:\s*/, '')}</td>
                       <td className="px-4 py-3 text-slate-600 font-mono">{latestDate}</td>
                       <td className="px-4 py-3 text-right font-bold text-blue-900 font-mono">
                         {formatKRW(donor.totalAllTime)}원
@@ -296,19 +453,23 @@ export const DonorSearch: React.FC<DonorSearchProps> = ({
       {/* CASE C: Single Active Donor Selected -> Full Information & Issuance View */}
       {activeDonor && (
         <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden space-y-0 animate-in fade-in duration-200">
-          {/* Homonym Re-selection notice if multiple exists */}
-          {matchedDonors.length > 1 && (
+          {/* Re-selection notice if multiple candidates existed */}
+          {searchResultDonors.length > 1 && (
             <div className="bg-amber-50 px-6 py-2.5 text-xs text-amber-900 flex items-center justify-between border-b border-amber-200">
               <span className="flex items-center gap-1.5 font-medium">
                 <Users className="w-3.5 h-3.5 text-amber-600" />
-                <span>동명이인 {matchedDonors.length}명 중 선택된 후원자 정보입니다.</span>
+                <span>
+                  {isHomonymCase
+                    ? `동명이인 ${searchResultDonors.length}명 중 선택된 후원자 정보입니다.`
+                    : `검색결과 ${searchResultDonors.length}명 중 선택된 후원자 정보입니다.`}
+                </span>
               </span>
               <button
                 type="button"
                 onClick={() => setSelectedDonorKey(null)}
                 className="font-bold underline hover:text-amber-950 cursor-pointer"
               >
-                다른 동명이인 선택
+                {isHomonymCase ? '다른 동명이인 선택' : '다른 후원자 선택'}
               </button>
             </div>
           )}
@@ -320,8 +481,8 @@ export const DonorSearch: React.FC<DonorSearchProps> = ({
                 <span className="text-xs font-semibold px-2 py-0.5 rounded bg-blue-100 text-blue-900">
                   {activeDonor.isBusiness ? '법인/단체 기부자' : '개인 기부자'}
                 </span>
-                <span className="text-xs text-slate-500 font-mono">
-                  식별번호: {maskIdNumber(activeDonor.idNumber)}
+                <span className="text-xs text-slate-600 font-mono font-semibold">
+                  {getIdLabel(activeDonor)}
                 </span>
               </div>
               <h3 className="text-xl font-bold text-slate-900 mt-1 flex items-center gap-2">
