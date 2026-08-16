@@ -4,9 +4,9 @@ import { RawDonationRecord, IssuedReceiptRecord } from '../types/donation';
 // Flexible column matcher
 const COLUMN_SYNONYMS = {
   donorName: ['성명', '성명후원자명', '이름', '후원자명', '기부자명', '기부자', '후원자', '회원명', '이름상호', '상호'],
-  idNumber: ['주민등록번호', '주민번호', '주민번호/사업자번호', '사업자번호', '사업자등록번호', '식별번호', '고유식별번호', '주민/사업자번호'],
-  address: ['주소', '소재지', '거주지', '기부자주소', '도로명주소', '본점소재지', '사업장소재지'],
-  date: ['후원일', '후원일자', '후원연월일', '납부일', '납부일자', '납부연월일', '연월일', '기부일', '기부일자', '기부연월일', '일자', '날짜', '입금일', '입금일자', '입금연월일'],
+  idNumber: ['주민등록번호', '주민번호', '주민등록번호/사업자번호', '주민번호/사업자번호', '주민/사업자번호', '주민사업자번호', '사업자번호', '사업자등록번호', '식별번호', '고유식별번호'],
+  address: ['주소', '주소(소재지)', '주소 / 소재지', '소재지', '거주지', '기부자주소', '기부자 주소', '도로명주소', '본점소재지', '사업장소재지'],
+  date: ['후원일', '후원일자', '후원연월일', '납부일', '납부일자', '납부연월일', '납부연월', '연월일', '기부일', '기부일자', '기부연월일', '일자', '날짜', '입금일', '입금일자', '입금연월일'],
   amount: ['후원금', '후원금액', '후원금액원', '납부금액', '납부금액원', '금액', '금액원', '기부금액', '기부금', '입금액', '수납액', '납부액'],
   paymentMethod: ['후원방법', '납부방법', '결제방법', '이체방법', '수단', '결제수단', '구분방법'],
   donationType: ['기부금유형', '기부유형', '유형', '기부구분', '구분'],
@@ -170,6 +170,20 @@ export async function parseDonationExcel(file: File): Promise<ParseResult> {
     throw new Error('엑셀 열 이름을 인식할 수 없습니다. 최소한 성명과 후원금액 열이 포함되어 있는지 확인해주세요.');
   }
 
+  // 재단 표준 9열 서식은 헤더 인식이 일부 실패하더라도 위치로 안전하게 보완합니다.
+  // A 성명 / B 주민(사업자)번호 / C 주소 / D 후원일자 / E 후원금액 / F 후원방법 / G 유형 / H 코드 / I 내용
+  if (headerRowIndex >= 0) {
+    const standardPositions: Array<[number, keyof typeof COLUMN_SYNONYMS]> = [
+      [0, 'donorName'], [1, 'idNumber'], [2, 'address'], [3, 'date'], [4, 'amount'],
+      [5, 'paymentMethod'], [6, 'donationType'], [7, 'donationCode'], [8, 'content'],
+    ];
+    for (const [col, field] of standardPositions) {
+      if (rawJson[headerRowIndex]?.[col] !== undefined && bestHeaderMap[col] === undefined) {
+        bestHeaderMap[col] = field;
+      }
+    }
+  }
+
   // 필수 데이터는 성명/후원금액만 사용합니다.
   // 주민/사업자번호, 주소, 후원일자, 후원방법, 기부금유형, 기부금코드, 기부내용은 선택 항목입니다.
   // 후원일자가 없으면 파일명에서 YYYY년 M월 / YYYY-MM / YYYYMM 형식의 월을 추정해 period로 저장합니다.
@@ -280,6 +294,30 @@ export async function parseDonationExcel(file: File): Promise<ParseResult> {
           content: '후원금',
         });
       }
+    }
+  }
+
+  // 표준 서식의 헤더가 병합/서식 때문에 비정상적으로 읽힌 경우에도
+  // A열 성명 + E열 금액이 있으면 데이터를 살립니다. 주소/번호/날짜도 같은 행에서 함께 보존합니다.
+  if (records.length === 0 && rawJson[headerRowIndex + 1]) {
+    for (let r = headerRowIndex + 1; r < rawJson.length; r++) {
+      const row = rawJson[r] || [];
+      const donorName = String(row[0] ?? '').trim();
+      const amount = parseExcelAmount(row[4]);
+      if (!donorName || amount <= 0) continue;
+      records.push({
+        id: `rec-${Date.now()}-${r}-${Math.random().toString(36).substring(2, 6)}`,
+        donorName,
+        idNumber: String(row[1] ?? '').trim(),
+        address: String(row[2] ?? '').trim(),
+        date: parseExcelDate(row[3]),
+        period: inferredPeriod || undefined,
+        amount,
+        paymentMethod: String(row[5] ?? '').trim() || '계좌이체',
+        donationType: String(row[6] ?? '').trim() || undefined,
+        donationCode: String(row[7] ?? '').trim() || undefined,
+        content: String(row[8] ?? '').trim() || '후원금',
+      });
     }
   }
 

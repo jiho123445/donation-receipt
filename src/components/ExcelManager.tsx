@@ -265,7 +265,7 @@ export const ExcelManager: React.FC<ExcelManagerProps> = ({
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-200">
-              {donations.slice(0, 8).map((rec, idx) => (
+              {donations.map((rec, idx) => (
                 <tr key={rec.id || idx} className="hover:bg-slate-50">
                   <td className="px-3 py-2 font-medium text-slate-900 border-r border-slate-200">{rec.donorName}</td>
                   <td className="px-3 py-2 text-slate-500 font-mono border-r border-slate-200">
@@ -282,11 +282,9 @@ export const ExcelManager: React.FC<ExcelManagerProps> = ({
               ))}
             </tbody>
           </table>
-          {donations.length > 8 && (
-            <div className="text-center text-xs text-slate-400 py-2">
-              ... 외 {donations.length - 8}건의 후원자료가 더 있습니다.
-            </div>
-          )}
+          <div className="text-center text-xs text-slate-400 py-2">
+            총 {donations.length.toLocaleString()}건의 누적 후원자료를 모두 표시하고 있습니다.
+          </div>
         </div>
       </div>
 
