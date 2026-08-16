@@ -24,14 +24,39 @@ function normalizeHeaderName(header: string): string {
 
 function findMatchingField(header: string): keyof typeof COLUMN_SYNONYMS | null {
   const clean = normalizeHeaderName(header);
+  if (!clean) return null;
+
+  // 1단계: 완전일치를 항상 최우선으로 검사합니다.
+  // (v13 수정) 기존에는 완전일치와 부분일치를 같은 우선순위로 검사해서,
+  // 예를 들어 '기부금유형' 헤더가 amount의 부분일치 동의어인 '기부금'과 먼저 매칭되어
+  // '기부금유형'/'기부금코드' 열이 '후원금액' 열로 잘못 인식되고,
+  // 실제 후원금액을 텍스트/코드값으로 덮어쓰는 심각한 데이터 훼손 버그가 있었습니다.
+  // '기부금유형'과 '기부금코드'는 각 필드의 완전일치 동의어로 이미 등록되어 있으므로,
+  // 완전일치를 먼저 검사하면 이 문제가 근본적으로 해결됩니다.
   for (const [field, synonyms] of Object.entries(COLUMN_SYNONYMS)) {
     for (const syn of synonyms) {
-      if (clean === normalizeHeaderName(syn) || clean.includes(normalizeHeaderName(syn))) {
+      if (clean === normalizeHeaderName(syn)) {
         return field as keyof typeof COLUMN_SYNONYMS;
       }
     }
   }
-  return null;
+
+  // 2단계: 완전일치가 없을 때만 부분일치를 검사하되,
+  // 여러 필드가 동시에 부분일치할 경우 더 길고 구체적인 동의어를 우선합니다.
+  // (예: '기부금유형(상세)'처럼 완전일치는 아니지만 '기부금유형'을 포함하는 헤더가 있다면,
+  // 짧고 일반적인 amount의 '기부금'보다 donationType의 '기부금유형'을 우선 채택)
+  let bestField: keyof typeof COLUMN_SYNONYMS | null = null;
+  let bestLen = 0;
+  for (const [field, synonyms] of Object.entries(COLUMN_SYNONYMS)) {
+    for (const syn of synonyms) {
+      const normSyn = normalizeHeaderName(syn);
+      if (normSyn && clean.includes(normSyn) && normSyn.length > bestLen) {
+        bestLen = normSyn.length;
+        bestField = field as keyof typeof COLUMN_SYNONYMS;
+      }
+    }
+  }
+  return bestField;
 }
 
 function inferPeriodFromFileName(fileName: string): string {
@@ -168,6 +193,24 @@ export async function parseDonationExcel(file: File): Promise<ParseResult> {
 
   if (headerRowIndex === -1 || maxMatchedCount === 0) {
     throw new Error('엑셀 열 이름을 인식할 수 없습니다. 최소한 성명과 후원금액 열이 포함되어 있는지 확인해주세요.');
+  }
+
+  // 안전장치: 같은 필드(예: amount)가 실수로 두 개 이상의 열에 매칭되면
+  // 나중 열이 앞선 열의 값을 조용히 덮어쓰는 것을 방지하기 위해,
+  // 가장 먼저(왼쪽) 매칭된 열만 유지하고 이후 중복 매칭은 무시합니다.
+  {
+    const seenFields = new Set<keyof typeof COLUMN_SYNONYMS>();
+    const dedupedMap: Record<number, keyof typeof COLUMN_SYNONYMS> = {};
+    Object.keys(bestHeaderMap)
+      .map((k) => parseInt(k, 10))
+      .sort((a, b) => a - b)
+      .forEach((colIdx) => {
+        const field = bestHeaderMap[colIdx];
+        if (seenFields.has(field)) return; // 중복 필드는 첫 매칭만 사용
+        seenFields.add(field);
+        dedupedMap[colIdx] = field;
+      });
+    bestHeaderMap = dedupedMap;
   }
 
   // 재단 표준 9열 서식은 헤더 인식이 일부 실패하더라도 위치로 안전하게 보완합니다.

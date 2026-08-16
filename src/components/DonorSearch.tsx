@@ -201,16 +201,41 @@ export const DonorSearch: React.FC<DonorSearchProps> = ({
       // Auto pick latest year from this donor's donations
       const latestYear = Math.max(...matched[0].years, 2026);
       setSelectedTaxYear(latestYear);
+      return;
+    }
+
+    // (v13 수정) 완전일치가 없더라도, 이름 일부 검색(부분일치) 결과가 정확히 1명뿐이면
+    // 화면에 아무것도 표시되지 않던 문제(빈 화면)를 막기 위해 그 1명도 바로 선택합니다.
+    if (matched.length === 0) {
+      const partial = donorGroups.filter((g) => g.donorName.toLowerCase().includes(target.toLowerCase()));
+      if (partial.length === 1) {
+        setSelectedDonorKey(partial[0].donorKey);
+        const latestYear = Math.max(...partial[0].years, 2026);
+        setSelectedTaxYear(latestYear);
+      }
     }
   };
 
-  // Find all matched donors for current search query
+  // Find all matched donors for current search query (이름 일부만 포함해도 검색됨)
   const matchedDonors = useMemo(() => {
     if (!searchedName) return [];
     return donorGroups.filter((g) =>
       g.donorName.toLowerCase().includes(searchedName.toLowerCase())
     );
   }, [searchedName, donorGroups]);
+
+  // (v13 수정) '동명이인'은 이름이 정확히 같은 경우에만 의미가 있으므로 별도로 구분합니다.
+  // matchedDonors(부분일치)를 그대로 '동명이인'으로 표기하면, 예를 들어 '철수'로 검색했을 때
+  // 이름이 전혀 다른 '김철수'와 '박철수민'까지 동명이인처럼 묶여 보이는 문제가 있었습니다.
+  const exactMatches = useMemo(() => {
+    if (!searchedName) return [];
+    return donorGroups.filter((g) => g.donorName.toLowerCase() === searchedName.toLowerCase());
+  }, [searchedName, donorGroups]);
+
+  // 실제로 이름이 완전히 같은 후원자가 2명 이상일 때만 '동명이인' 케이스로 취급합니다.
+  const isHomonymCase = exactMatches.length > 1;
+  // 동명이인이 아니면서(=이름이 다른 사람들의 부분일치 검색이거나, 정확일치 1명 이하) 여러 결과가 있는 경우.
+  const searchResultDonors = isHomonymCase ? exactMatches : matchedDonors;
 
   // Selected donor group object
   const activeDonor = useMemo(() => {
@@ -356,15 +381,21 @@ export const DonorSearch: React.FC<DonorSearchProps> = ({
         </div>
       )}
 
-      {/* CASE B: Multiple Matches (동명이인 처리) */}
-      {searchedName && matchedDonors.length > 1 && !activeDonor && (
-        <div className="bg-white p-6 rounded-xl border-2 border-amber-300 shadow-xs space-y-4">
-          <div className="flex items-center gap-2 text-amber-900 pb-2 border-b border-amber-200">
-            <Users className="w-5 h-5 text-amber-600" />
+      {/* CASE B: Multiple Matches (동명이인 처리 또는 부분일치 검색결과) */}
+      {searchedName && searchResultDonors.length > 1 && !activeDonor && (
+        <div className={`bg-white p-6 rounded-xl border-2 shadow-xs space-y-4 ${isHomonymCase ? 'border-amber-300' : 'border-slate-200'}`}>
+          <div className={`flex items-center gap-2 pb-2 border-b ${isHomonymCase ? 'text-amber-900 border-amber-200' : 'text-slate-800 border-slate-200'}`}>
+            <Users className={`w-5 h-5 ${isHomonymCase ? 'text-amber-600' : 'text-slate-500'}`} />
             <div>
-              <h3 className="text-sm font-bold">동명이인이 있습니다. 정확한 후원자를 선택하세요.</h3>
-              <p className="text-xs text-amber-700">
-                동일한 성명의 후원자가 {matchedDonors.length}명 검색되었습니다. 주소와 후원내역을 확인 후 선택해주세요.
+              <h3 className="text-sm font-bold">
+                {isHomonymCase
+                  ? '동명이인이 있습니다. 정확한 후원자를 선택하세요.'
+                  : `'${searchedName}'이(가) 포함된 후원자가 여러 명 검색되었습니다.`}
+              </h3>
+              <p className={`text-xs ${isHomonymCase ? 'text-amber-700' : 'text-slate-500'}`}>
+                {isHomonymCase
+                  ? `동일한 성명의 후원자가 ${searchResultDonors.length}명 검색되었습니다. 주소와 후원내역을 확인 후 선택해주세요.`
+                  : `이름이 정확히 같지는 않지만 검색어를 포함하는 후원자 ${searchResultDonors.length}명입니다. 원하는 후원자를 선택해주세요.`}
               </p>
             </div>
           </div>
@@ -382,7 +413,7 @@ export const DonorSearch: React.FC<DonorSearchProps> = ({
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-200">
-                {matchedDonors.map((donor) => {
+                {searchResultDonors.map((donor) => {
                   const latestDate = donor.donations
                     .map((d) => d.date)
                     .sort()
@@ -422,19 +453,23 @@ export const DonorSearch: React.FC<DonorSearchProps> = ({
       {/* CASE C: Single Active Donor Selected -> Full Information & Issuance View */}
       {activeDonor && (
         <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden space-y-0 animate-in fade-in duration-200">
-          {/* Homonym Re-selection notice if multiple exists */}
-          {matchedDonors.length > 1 && (
+          {/* Re-selection notice if multiple candidates existed */}
+          {searchResultDonors.length > 1 && (
             <div className="bg-amber-50 px-6 py-2.5 text-xs text-amber-900 flex items-center justify-between border-b border-amber-200">
               <span className="flex items-center gap-1.5 font-medium">
                 <Users className="w-3.5 h-3.5 text-amber-600" />
-                <span>동명이인 {matchedDonors.length}명 중 선택된 후원자 정보입니다.</span>
+                <span>
+                  {isHomonymCase
+                    ? `동명이인 ${searchResultDonors.length}명 중 선택된 후원자 정보입니다.`
+                    : `검색결과 ${searchResultDonors.length}명 중 선택된 후원자 정보입니다.`}
+                </span>
               </span>
               <button
                 type="button"
                 onClick={() => setSelectedDonorKey(null)}
                 className="font-bold underline hover:text-amber-950 cursor-pointer"
               >
-                다른 동명이인 선택
+                {isHomonymCase ? '다른 동명이인 선택' : '다른 후원자 선택'}
               </button>
             </div>
           )}

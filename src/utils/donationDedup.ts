@@ -38,10 +38,24 @@ function isMonthOnly(value?: string): boolean {
 }
 
 function samePersonAndPayment(existing: RawDonationRecord, incoming: RawDonationRecord): boolean {
-  const sameId = !!existing.idNumber?.trim() && !!incoming.idNumber?.trim() &&
-    existing.idNumber.trim() === incoming.idNumber.trim();
+  const existingId = existing.idNumber?.trim() || '';
+  const incomingId = incoming.idNumber?.trim() || '';
+  const sameId = !!existingId && !!incomingId && existingId === incomingId;
+
+  // 양쪽 다 주민/사업자번호가 있는데 서로 다르면 확실히 다른 사람이므로 즉시 제외합니다.
+  if (existingId && incomingId && existingId !== incomingId) return false;
+
   const sameName = existing.donorName.trim().toLowerCase() === incoming.donorName.trim().toLowerCase();
   if (!sameId && !sameName) return false;
+
+  // (v13 수정) 양쪽 다 식별번호가 없어 이름만으로 동일인 여부를 판단해야 하는 경우,
+  // 동명이인 오병합을 막기 위해 주소가 둘 다 존재한다면 주소까지 일치해야만
+  // 같은 후원자로 인정합니다. (주소가 한쪽이라도 비어 있으면 기존처럼 이름만으로 판단)
+  if (!sameId) {
+    const existingAddr = (existing.address || '').trim().toLowerCase().replace(/\s+/g, ' ');
+    const incomingAddr = (incoming.address || '').trim().toLowerCase().replace(/\s+/g, ' ');
+    if (existingAddr && incomingAddr && existingAddr !== incomingAddr) return false;
+  }
 
   if (Math.round(existing.amount || 0) !== Math.round(incoming.amount || 0)) return false;
 
