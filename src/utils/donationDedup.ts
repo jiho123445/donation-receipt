@@ -3,6 +3,8 @@ import type { RawDonationRecord } from '../types/donation';
 /**
  * 동일한 납부내역을 다시 업로드했을 때 중복 합산하지 않기 위한 식별값입니다.
  * 회원명 + 식별번호/주소 + 납부일 + 금액 + 납부방법 + 기부내용을 기준으로 합니다.
+ * 기부금유형/기부금코드는 선택 항목이므로 중복 판별 기준에서 제외합니다.
+ * 그래야 같은 납부내역을 한 번은 빈 유형/코드로, 다음에는 유형/코드를 채워 다시 올려도 중복 합산되지 않습니다.
  */
 export function getDonationFingerprint(record: RawDonationRecord): string {
   const identity = record.idNumber?.trim()
@@ -15,8 +17,6 @@ export function getDonationFingerprint(record: RawDonationRecord): string {
     record.date,
     Math.round(record.amount || 0),
     record.paymentMethod || '',
-    record.donationType || '',
-    record.donationCode || '',
     record.content || '',
   ]
     .map((value) => String(value).trim().replace(/\s+/g, ' '))

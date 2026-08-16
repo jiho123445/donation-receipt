@@ -7,14 +7,14 @@ interface ExcelManagerProps {
   donations: RawDonationRecord[];
   onUpdateDonations: (records: RawDonationRecord[]) => Promise<{ total: number; added: number; duplicates: number }>;
   onClearDonations: () => void;
-  onLoadSample: () => void;
+  onDeleteDonationsByMonth: (year: number, month: number) => Promise<number>;
 }
 
 export const ExcelManager: React.FC<ExcelManagerProps> = ({
   donations,
   onUpdateDonations,
   onClearDonations,
-  onLoadSample,
+  onDeleteDonationsByMonth,
 }) => {
   const [isDragging, setIsDragging] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
@@ -22,64 +22,107 @@ export const ExcelManager: React.FC<ExcelManagerProps> = ({
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [lastParseResult, setLastParseResult] = useState<ParseResult | null>(null);
   const [showClearConfirm, setShowClearConfirm] = useState(false);
+  const [selectedMonth, setSelectedMonth] = useState<string>('all');
+  const [isDeletingMonth, setIsDeletingMonth] = useState(false);
+  const [showDeleteMonthConfirm, setShowDeleteMonthConfirm] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const handleFile = async (file: File) => {
-    if (!file.name.match(/\.(xlsx|xls)$/i)) {
-      setErrorMessage('Excel 파일(.xlsx 또는 .xls)만 업로드할 수 있습니다.');
+  const handleFiles = async (files: FileList | File[]) => {
+    const fileArray = Array.from(files || []);
+    const excelFiles = fileArray.filter((file) => /\.(xlsx|xls)$/i.test(file.name));
+
+    if (excelFiles.length === 0) {
+      setErrorMessage('Excel 파일(.xlsx 또는 .xls)을 하나 이상 선택해주세요.');
       return;
     }
 
     setIsProcessing(true);
     setErrorMessage(null);
     setSuccessMessage(null);
+    setLastParseResult(null);
+
+    let totalAdded = 0;
+    let totalDuplicates = 0;
+    let totalRecords = 0;
+    let failedFiles: string[] = [];
 
     try {
-      const result = await parseDonationExcel(file);
-      if (result.missingRequired.length > 0) {
-        setErrorMessage(`필수 열이 누락되었습니다: ${result.missingRequired.join(', ')}`);
-        setIsProcessing(false);
-        return;
+      for (const file of excelFiles) {
+        try {
+          const result = await parseDonationExcel(file);
+          if (result.missingRequired.length > 0) {
+            failedFiles.push(`${file.name}: 필수 열 ${result.missingRequired.join(', ')}`);
+            continue;
+          }
+          if (result.records.length === 0) {
+            failedFiles.push(`${file.name}: 유효한 후원 데이터가 없습니다.`);
+            continue;
+          }
+
+          const saveResult = await onUpdateDonations(result.records);
+          totalAdded += saveResult.added;
+          totalDuplicates += saveResult.duplicates;
+          totalRecords += result.records.length;
+          setLastParseResult(result);
+        } catch (fileError: any) {
+          failedFiles.push(`${file.name}: ${fileError?.message || '파일 처리 오류'}`);
+        }
       }
 
-      if (result.records.length === 0) {
-        setErrorMessage('유효한 후원 데이터가 발견되지 않았습니다. 금액과 성명이 올바른지 확인해주세요.');
-        setIsProcessing(false);
-        return;
+      if (totalRecords === 0 && failedFiles.length > 0) {
+        throw new Error(failedFiles.join(' / '));
       }
 
-      const saveResult = await onUpdateDonations(result.records);
-      setLastParseResult(result);
-      setErrorMessage(null);
+      const suffix = failedFiles.length > 0
+        ? ` 실패/제외 ${failedFiles.length}개 파일: ${failedFiles.join(' / ')}`
+        : '';
       setSuccessMessage(
-        saveResult.duplicates > 0
-          ? `업로드 완료: 신규 ${saveResult.added.toLocaleString()}건을 누적했습니다. 이미 등록된 ${saveResult.duplicates.toLocaleString()}건은 중복 합산하지 않았습니다.`
-          : `업로드 완료: ${saveResult.added.toLocaleString()}건이 누적 저장되었습니다.`
+        `${excelFiles.length}개 파일 처리 완료: 신규 ${totalAdded.toLocaleString()}건을 누적했습니다. ` +
+        `중복 ${totalDuplicates.toLocaleString()}건은 합산하지 않았습니다.${suffix}`
       );
     } catch (err: any) {
       setErrorMessage(err.message || '엑셀 파일을 읽는 중 오류가 발생했습니다.');
     } finally {
       setIsProcessing(false);
+      if (fileInputRef.current) fileInputRef.current.value = '';
     }
   };
 
   const handleDrop = (e: React.DragEvent) => {
     e.preventDefault();
     setIsDragging(false);
-    if (e.dataTransfer.files && e.dataTransfer.files[0]) {
-      handleFile(e.dataTransfer.files[0]);
+    if (e.dataTransfer.files?.length) {
+      handleFiles(e.dataTransfer.files);
     }
   };
 
-  const handleLoadSample = () => {
-    onLoadSample();
-    setLastParseResult(null);
+  const handleDeleteSelectedMonth = async () => {
+    if (selectedMonth === 'all') return;
+    const [year, month] = selectedMonth.split('-').map(Number);
+    setIsDeletingMonth(true);
     setErrorMessage(null);
+    try {
+      const deleted = await onDeleteDonationsByMonth(year, month);
+      setSuccessMessage(`${year}년 ${month}월 자료 ${deleted.toLocaleString()}건을 삭제했습니다. 다른 월의 자료는 유지됩니다.`);
+      setSelectedMonth('all');
+    } catch (err: any) {
+      setErrorMessage(err?.message || '월별 자료 삭제 중 오류가 발생했습니다.');
+    } finally {
+      setIsDeletingMonth(false);
+      setShowDeleteMonthConfirm(false);
+    }
   };
 
   // Group unique donors for stats
-  const uniqueDonorNames = Array.from(new Set(donations.map((d) => `${d.donorName}-${d.address || d.idNumber}`)));
-  const totalAmount = donations.reduce((sum, d) => sum + d.amount, 0);
+  const availableMonths = Array.from(new Set(donations
+    .map((d) => String(d.date || '').slice(0, 7))
+    .filter((m) => /^\d{4}-\d{2}$/.test(m))))
+    .sort((a, b) => b.localeCompare(a));
+  const visibleDonations = selectedMonth === 'all'
+    ? donations
+    : donations.filter((d) => String(d.date || '').startsWith(`${selectedMonth}-`));
+  const uniqueDonorNames = Array.from(new Set(visibleDonations.map((d) => `${d.donorName}-${d.address || d.idNumber}`)));
+  const totalAmount = visibleDonations.reduce((sum, d) => sum + d.amount, 0);
 
   return (
     <div className="max-w-4xl mx-auto space-y-6">
@@ -120,10 +163,11 @@ export const ExcelManager: React.FC<ExcelManagerProps> = ({
           type="file"
           ref={fileInputRef}
           accept=".xlsx, .xls"
+          multiple
           className="hidden"
           onChange={(e) => {
-            if (e.target.files && e.target.files[0]) {
-              handleFile(e.target.files[0]);
+            if (e.target.files && e.target.files.length) {
+              handleFiles(e.target.files);
             }
           }}
         />
@@ -133,10 +177,10 @@ export const ExcelManager: React.FC<ExcelManagerProps> = ({
         </div>
 
         <h3 className="text-base font-bold text-slate-900">
-          {isProcessing ? '엑셀 파일을 분석하는 중입니다...' : '엑셀 회원 명단 파일을 마우스로 끌어다 놓으세요'}
+          {isProcessing ? '엑셀 파일을 분석하는 중입니다...' : '엑셀 파일을 여러 개 선택하거나 마우스로 끌어다 놓으세요'}
         </h3>
         <p className="text-xs text-slate-500 mt-1">
-          또는 클릭하여 컴퓨터에서 .xlsx / .xls 파일을 선택하세요.
+          또는 클릭하여 여러 개의 .xlsx / .xls 파일을 한꺼번에 선택할 수 있습니다.
         </p>
 
         <div className="mt-4 flex flex-wrap items-center justify-center gap-2 text-[11px] text-slate-500">
@@ -145,6 +189,7 @@ export const ExcelManager: React.FC<ExcelManagerProps> = ({
           <span className="bg-slate-100 px-2 py-0.5 rounded border">주소</span>
           <span className="bg-slate-100 px-2 py-0.5 rounded border">후원일자</span>
           <span className="bg-slate-100 px-2 py-0.5 rounded border">후원금액</span>
+          <span className="bg-emerald-50 text-emerald-700 px-2 py-0.5 rounded border border-emerald-200">기부금유형·코드 선택</span>
         </div>
       </div>
 
@@ -182,6 +227,62 @@ export const ExcelManager: React.FC<ExcelManagerProps> = ({
         </div>
       )}
 
+      {/* Monthly management */}
+      <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-xs space-y-4">
+        <div className="flex flex-col lg:flex-row lg:items-end justify-between gap-3">
+          <div>
+            <h3 className="text-sm font-bold text-slate-900 flex items-center gap-2">
+              <Database className="w-4 h-4 text-slate-600" />
+              <span>월별 납부자료 관리</span>
+            </h3>
+            <p className="text-xs text-slate-500 mt-1">
+              이미 7월까지 저장되어 있다면 8월 파일만 올려도 7월 자료는 그대로 유지되고 8월 자료가 추가 누적됩니다.
+            </p>
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <select
+              value={selectedMonth}
+              onChange={(e) => setSelectedMonth(e.target.value)}
+              className="text-xs border border-slate-300 rounded-md px-3 py-2 bg-white"
+            >
+              <option value="all">전체 월 보기</option>
+              {availableMonths.map((month) => (
+                <option key={month} value={month}>
+                  {month.slice(0, 4)}년 {Number(month.slice(5, 7))}월
+                </option>
+              ))}
+            </select>
+            {selectedMonth !== 'all' && (
+              <button
+                type="button"
+                onClick={() => setShowDeleteMonthConfirm(true)}
+                disabled={isDeletingMonth}
+                className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-semibold text-red-700 bg-red-50 hover:bg-red-100 border border-red-200 rounded-md disabled:opacity-50"
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+                {isDeletingMonth ? '삭제 중...' : '선택 월 자료 삭제'}
+              </button>
+            )}
+          </div>
+        </div>
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+          <div className="rounded-lg bg-slate-50 border border-slate-200 p-3">
+            <div className="text-[11px] text-slate-500">선택 범위</div>
+            <div className="text-sm font-bold text-slate-900 mt-1">
+              {selectedMonth === 'all' ? '전체 누적자료' : `${selectedMonth.slice(0, 4)}년 ${Number(selectedMonth.slice(5, 7))}월`}
+            </div>
+          </div>
+          <div className="rounded-lg bg-slate-50 border border-slate-200 p-3">
+            <div className="text-[11px] text-slate-500">납부 건수</div>
+            <div className="text-sm font-bold text-slate-900 mt-1">{visibleDonations.length.toLocaleString()}건</div>
+          </div>
+          <div className="rounded-lg bg-slate-50 border border-slate-200 p-3">
+            <div className="text-[11px] text-slate-500">납부 합계</div>
+            <div className="text-sm font-bold text-blue-900 mt-1">{totalAmount.toLocaleString()}원</div>
+          </div>
+        </div>
+      </div>
+
       {/* Current Data Overview & Actions */}
       <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-xs space-y-4">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-slate-100">
@@ -196,15 +297,6 @@ export const ExcelManager: React.FC<ExcelManagerProps> = ({
           </div>
 
           <div className="flex items-center gap-2">
-            <button
-              onClick={handleLoadSample}
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-blue-900 bg-blue-50 hover:bg-blue-100 border border-blue-200 rounded-md transition-colors cursor-pointer"
-              title="홍길동 3건, 김철수, 이영희, 동명이인 홍길동 등 테스트용 샘플 불러오기"
-            >
-              <RefreshCw className="w-3.5 h-3.5" />
-              <span>샘플 데이터 불러오기</span>
-            </button>
-
             <button
               onClick={downloadSampleExcelTemplate}
               className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-slate-700 bg-slate-100 hover:bg-slate-200 border border-slate-300 rounded-md transition-colors cursor-pointer"
@@ -238,7 +330,7 @@ export const ExcelManager: React.FC<ExcelManagerProps> = ({
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-200">
-              {donations.slice(0, 8).map((rec, idx) => (
+              {visibleDonations.slice(0, 8).map((rec, idx) => (
                 <tr key={rec.id || idx} className="hover:bg-slate-50">
                   <td className="px-3 py-2 font-medium text-slate-900 border-r border-slate-200">{rec.donorName}</td>
                   <td className="px-3 py-2 text-slate-500 font-mono border-r border-slate-200">
@@ -255,9 +347,9 @@ export const ExcelManager: React.FC<ExcelManagerProps> = ({
               ))}
             </tbody>
           </table>
-          {donations.length > 8 && (
+          {visibleDonations.length > 8 && (
             <div className="text-center text-xs text-slate-400 py-2">
-              ... 외 {donations.length - 8}건의 후원자료가 더 있습니다.
+              ... 외 {visibleDonations.length - 8}건의 후원자료가 더 있습니다.
             </div>
           )}
         </div>
@@ -298,6 +390,22 @@ export const ExcelManager: React.FC<ExcelManagerProps> = ({
           </div>
         </div>
       )}
+      {showDeleteMonthConfirm && selectedMonth !== 'all' && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+          <div className="w-full max-w-sm rounded-xl bg-white p-5 shadow-xl">
+            <h3 className="text-base font-bold text-slate-900">월별 자료 삭제</h3>
+            <p className="text-sm text-slate-600 mt-2">
+              {selectedMonth.slice(0, 4)}년 {Number(selectedMonth.slice(5, 7))}월의 납부자료만 삭제합니다.
+              다른 월의 자료와 영수증 발급대장은 삭제되지 않습니다.
+            </p>
+            <div className="flex justify-end gap-2 mt-5">
+              <button type="button" onClick={() => setShowDeleteMonthConfirm(false)} className="px-3 py-2 text-xs border rounded-md">취소</button>
+              <button type="button" onClick={handleDeleteSelectedMonth} className="px-3 py-2 text-xs font-semibold text-white bg-red-600 rounded-md">삭제</button>
+            </div>
+          </div>
+        </div>
+      )}
+
     </div>
   );
 };

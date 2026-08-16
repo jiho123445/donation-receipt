@@ -126,12 +126,14 @@ export async function parseDonationExcel(file: File): Promise<ParseResult> {
     throw new Error('엑셀 열 이름을 인식할 수 없습니다. 성명, 후원일자, 후원금액 열이 포함되어 있는지 확인해주세요.');
   }
 
-  // Required fields. Do not invent dates, donation types, or statutory codes.
+  // 필수 열은 성명/후원일자/후원금액만 사용합니다.
+  // 주민/사업자번호, 주소, 후원방법, 기부금유형, 기부금코드, 기부내용은 선택 항목입니다.
+  // 특히 기부금유형/기부금코드는 엑셀에서 열 자체가 없거나 값이 비어 있어도 업로드할 수 있어야 합니다.
   const mappedFields = Object.values(bestHeaderMap);
   const missingRequired: string[] = [];
   if (!mappedFields.includes('donorName')) missingRequired.push('성명 (이름/후원자명)');
   if (!mappedFields.includes('date')) missingRequired.push('후원일자 (후원일/납부일/기부일)');
-  if (!mappedFields.includes('amount')) missingRequired.push('후원금액 (금액)');
+  if (!mappedFields.includes('amount')) missingRequired.push('후원금액 (후원금액/금액)');
   if (missingRequired.length > 0) {
     throw new Error(`필수 열이 없습니다: ${missingRequired.join(', ')}`);
   }
@@ -145,9 +147,9 @@ export async function parseDonationExcel(file: File): Promise<ParseResult> {
     const recordObj: Partial<RawDonationRecord> = {
       id: `rec-${Date.now()}-${r}-${Math.random().toString(36).substring(2, 6)}`,
       paymentMethod: '',
-      donationType: '',
-      donationCode: '',
       content: '',
+      // donationType / donationCode는 선택 항목입니다.
+      // 값이 비어 있으면 undefined로 유지하여 영수증 발급 시 단체 기본값을 사용할 수 있게 합니다.
     };
 
     let hasData = false;
@@ -172,9 +174,11 @@ export async function parseDonationExcel(file: File): Promise<ParseResult> {
       } else if (fieldKey === 'paymentMethod') {
         recordObj.paymentMethod = String(val || '계좌이체').trim();
       } else if (fieldKey === 'donationType') {
-        recordObj.donationType = String(val || '').trim();
+        const value = String(val || '').trim();
+        if (value) recordObj.donationType = value;
       } else if (fieldKey === 'donationCode') {
-        recordObj.donationCode = String(val || '').trim();
+        const value = String(val || '').trim();
+        if (value) recordObj.donationCode = value;
       } else if (fieldKey === 'content') {
         recordObj.content = String(val || '').trim();
       }
