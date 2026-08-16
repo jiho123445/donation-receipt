@@ -5,7 +5,6 @@ export interface RawDonationRecord {
   address: string;
   date: string; // YYYY-MM-DD; 날짜가 없는 월별 자료는 빈 문자열일 수 있습니다.
   period?: string; // YYYY-MM; Excel 파일명에서 추정한 월별 관리 기간
-  sourceKey?: string; // Excel 파일명 + 행 번호
   amount: number;
   paymentMethod: string; // 계좌이체, CMS, 현금 등
   donationType?: string; // 일반기부금, 지정기부금 등
@@ -50,7 +49,6 @@ export interface OrganizationInfo {
   donationType: string; // 기부금 유형 (예: 지정기부금 / 특례기부금 / 공익법인기부금)
   donationCode: string; // 기부금 코드 (예: 40)
   defaultContent: string; // 기본 기부내용 (기본값: 후원금)
-  legalBasisCode?: string;
   sealImage?: string; // Base64 data URL for uploaded seal or empty for vector seal
 }
 
@@ -77,12 +75,9 @@ export interface IssuedReceiptRecord {
   orgSnapshot: OrganizationInfo;
 
   // Status
-  status: 'issued' | 'cancelled' | 'reissued';
+  status: 'issued' | 'cancelled';
   createdAt: string;
   notes?: string;
-  reissueOf?: string;
-  reissueReason?: string;
-  reissuedTo?: string;
 }
 
 export interface PrintSettings {

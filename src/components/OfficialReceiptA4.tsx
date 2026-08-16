@@ -37,7 +37,7 @@ export const OfficialReceiptA4 = React.forwardRef<HTMLDivElement, OfficialReceip
     const formattedDate = `${year}년 ${month}월 ${day}일`;
 
     // Maximum items to display directly in the table
-    const maxTableRows = 12;
+    const maxTableRows = 5;
     const displayDonations = donations.slice(0, maxTableRows);
     const remainingRowsCount = Math.max(0, maxTableRows - displayDonations.length);
 

@@ -17,7 +17,6 @@ import {
   getIssuedReceipts,
   saveIssuedReceipt,
   cancelIssuedReceipt,
-  reissueIssuedReceipt,
   getNextReceiptNumber,
   getPrintSettings,
   savePrintSettings,
@@ -43,7 +42,6 @@ import {
   saveCloudOrganization,
   saveCloudReceipt,
   cancelCloudReceipt,
-  reissueCloudReceipt,
   getNextCloudReceiptNumber,
   testFirestoreConnection,
   saveCloudDonor,
@@ -60,7 +58,7 @@ export default function App() {
   const [activeTab, setActiveTab] = useState<'search' | 'history' | 'excel' | 'settings' | 'print'>('search');
 
   // Core Data
-  const [donations, setDonations] = useState<RawDonationRecord[]>([]);
+  const [donations, setDonations] = useState<RawDonationRecord[]>(INITIAL_SAMPLE_DONATIONS);
   const [orgInfo, setOrgInfo] = useState<OrganizationInfo>(getOrganizationInfo());
   const [issuedReceipts, setIssuedReceipts] = useState<IssuedReceiptRecord[]>([]);
   const [printSettings, setPrintSettings] = useState<PrintSettings>(getPrintSettings());
@@ -96,7 +94,7 @@ export default function App() {
 
     if (!firebaseConfigured || !auth) {
       setAuthReady(true);
-      setDonations([]);
+      setDonations(INITIAL_SAMPLE_DONATIONS);
       setOrgInfo(getOrganizationInfo());
       setIssuedReceipts(getIssuedReceipts());
       setPrintSettings(getPrintSettings());
@@ -140,8 +138,7 @@ export default function App() {
           errorDetail: String(error),
         });
         setOrgInfo(getOrganizationInfo());
-        setIssuedReceipts([]);
-        setDonations([]);
+        setIssuedReceipts(getIssuedReceipts());
       }
       setPrintSettings(getPrintSettings());
     });
@@ -191,7 +188,7 @@ export default function App() {
 
   // Cancel an Issued Receipt
   const handleCancelReceipt = (receiptNo: string) => {
-    if (!firebaseConfigured || !auth?.currentUser) cancelIssuedReceipt(receiptNo);
+    cancelIssuedReceipt(receiptNo);
     setIssuedReceipts((prev) => prev.map((r) => r.receiptNo === receiptNo ? { ...r, status: 'cancelled' as const } : r));
     if (firebaseConfigured && auth?.currentUser) {
       cancelCloudReceipt(receiptNo).catch(console.error);
@@ -202,8 +199,7 @@ export default function App() {
   const handleConfirmIssuance = async (
     formType: ReceiptFormType,
     issueDate: string,
-    isReissue: boolean,
-    reissueReason = ''
+    isReissue: boolean
   ): Promise<{ success: boolean; error?: string }> => {
     if (!confirmModalData) {
       return { success: false, error: '발급 대상자 정보가 없습니다.' };
@@ -213,9 +209,6 @@ export default function App() {
       const { donorName, idNumber, address, taxYear, donations: donorItems } = confirmModalData;
       const totalAmount = donorItems.reduce((sum, d) => sum + d.amount, 0);
       const amountInKorean = numberToHangulAmount(totalAmount);
-      const missingDateCount = donorItems.filter((d) => !d.date).length;
-      if (missingDateCount > 0) return { success:false, error:`후원일자가 없는 납부내역이 ${missingDateCount}건 있습니다. 정확한 후원일자를 입력한 후 영수증을 발급하세요.` };
-      if (donorItems.length > 12) return { success:false, error:'연간 후원내역이 12건을 초과합니다. 현재 A4 1면 양식에 안전하게 표시할 수 없으므로 상세내역을 정리한 후 발급하세요.' };
 
       if (!orgInfo.registrationNo && !orgInfo.bizNo) {
         return {
@@ -230,9 +223,6 @@ export default function App() {
         donationType: orgInfo.donationType || (formType === 'corporate' ? '지정기부금' : '지정기부금 (공익법인)'),
         donationCode: orgInfo.donationCode || '40',
       };
-
-      const existingIssued = issuedReceipts.find((r) => { if (r.status !== 'issued' || r.taxYear !== taxYear || r.donorName !== donorName) return false; if (idNumber && r.donorIdNumber && r.donorIdNumber === idNumber) return true; return !!address && !!r.donorAddress && r.donorAddress === address; });
-      if (isReissue && !existingIssued) return {success:false,error:'재발급할 기존 정상 영수증을 찾지 못했습니다.'};
 
       const receiptNo = firebaseConfigured && auth?.currentUser
         ? await getNextCloudReceiptNumber(taxYear)
@@ -253,20 +243,28 @@ export default function App() {
         orgSnapshot: { ...finalOrgInfo },
         status: 'issued',
         createdAt: new Date().toISOString(),
-        reissueOf: isReissue ? existingIssued?.receiptNo : undefined,
-        reissueReason: isReissue ? reissueReason : undefined,
       };
 
-      if (!firebaseConfigured || !auth?.currentUser) {
-        if (isReissue && existingIssued) reissueIssuedReceipt(existingIssued.receiptNo, newReceipt, reissueReason); else saveIssuedReceipt(newReceipt);
-      }
+      // Save and reload list
+      saveIssuedReceipt(newReceipt);
+      setIssuedReceipts((prev) => [newReceipt, ...prev.filter((r) => r.receiptNo !== newReceipt.receiptNo)]);
+
       if (firebaseConfigured && auth?.currentUser) {
         try {
-          if (isReissue && existingIssued) await reissueCloudReceipt(existingIssued.receiptNo,newReceipt,reissueReason); else await saveCloudReceipt(newReceipt);
-          await saveCloudDonor({id:`${donorName}_${idNumber || address}`.replace(/[\\/:*?"<>|]/g,'_'),donorName,idNumber,address,isBusiness:formType==='corporate',updatedAt:new Date().toISOString()});
-        } catch(error) { console.error('Firebase 클라우드 동기화 실패:',error); return {success:false,error:'Firebase 저장에 실패했습니다. 영수증 발급을 완료하지 않았습니다.'}; }
+          await saveCloudReceipt(newReceipt);
+          // Also save donor record and donation records to donors & donations collections
+          await saveCloudDonor({
+            id: `${donorName}_${idNumber || address}`.replace(/[\\/:*?"<>|]/g, '_'),
+            donorName,
+            idNumber,
+            address,
+            isBusiness: formType === 'corporate',
+            updatedAt: new Date().toISOString(),
+          });
+        } catch (error) {
+          console.error('Firebase 클라우드 동기화 실패:', error);
+        }
       }
-      setIssuedReceipts((prev)=>{const next=prev.filter(r=>r.receiptNo!==newReceipt.receiptNo);const withOriginal=isReissue&&existingIssued?next.map(r=>r.receiptNo===existingIssued.receiptNo?{...r,status:'reissued' as const,reissueReason,reissuedTo:newReceipt.receiptNo}:r):next;return [newReceipt,...withOriginal];});
 
       // Close confirm modal and immediately open preview
       setConfirmModalData(null);

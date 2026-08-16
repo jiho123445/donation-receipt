@@ -15,8 +15,7 @@ interface IssuanceConfirmModalProps {
   onConfirmIssuance: (
     formType: ReceiptFormType,
     issueDate: string,
-    isReissue: boolean,
-    reissueReason?: string
+    isReissue: boolean
   ) => Promise<{ success: boolean; error?: string } | void> | void;
   onViewExistingReceipt: (receipt: IssuedReceiptRecord) => void;
   onOpenOrgSettings: () => void;
@@ -45,15 +44,12 @@ export const IssuanceConfirmModal: React.FC<IssuanceConfirmModalProps> = ({
   );
   const [forceNewIssuance, setForceNewIssuance] = useState(false);
   const [localError, setLocalError] = useState<string | null>(null);
-  const [reissueReason, setReissueReason] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   if (!isOpen) return null;
 
   const totalAmount = donations.reduce((sum, d) => sum + d.amount, 0);
   const koreanAmount = numberToHangulAmount(totalAmount);
-  const missingDateCount = donations.filter((d)=>!d.date).length;
-  const overTableLimit = donations.length > 12;
 
   // Check for duplicate issuance in this tax year
   const existingReceipt =
@@ -78,8 +74,7 @@ export const IssuanceConfirmModal: React.FC<IssuanceConfirmModalProps> = ({
 
     setIsSubmitting(true);
     try {
-      if (forceNewIssuance && !reissueReason.trim()) { setLocalError('재발급/정정 사유를 입력해주세요.'); return; }
-      const result = await onConfirmIssuance(formType, issueDate, forceNewIssuance, reissueReason.trim());
+      const result = await onConfirmIssuance(formType, issueDate, forceNewIssuance);
       if (result && typeof result === 'object' && !result.success && result.error) {
         setLocalError(result.error);
       }
@@ -139,9 +134,6 @@ export const IssuanceConfirmModal: React.FC<IssuanceConfirmModalProps> = ({
               </div>
             </div>
           )}
-
-          {(missingDateCount > 0 || overTableLimit) && <div className="bg-rose-50 border border-rose-200 rounded-lg p-4 text-xs text-rose-900 space-y-1.5">{missingDateCount>0&&<div><strong>발급 중단:</strong> 후원일자가 없는 내역이 {missingDateCount}건 있습니다. 날짜를 입력한 후 발급하세요.</div>}{overTableLimit&&<div><strong>발급 중단:</strong> 연간 후원내역이 12건을 초과합니다.</div>}</div>}
-          {forceNewIssuance && <div className="bg-orange-50 border border-orange-200 rounded-lg p-4"><label className="block text-xs font-bold text-orange-900 mb-2">재발급/정정 사유 <span className="text-red-600">*</span></label><input value={reissueReason} onChange={(e)=>setReissueReason(e.target.value)} placeholder="예: 주소 오기입 수정" className="w-full px-3 py-2 text-xs border border-orange-300 rounded-md" /></div>}
 
           {/* Duplicate Issuance Warning */}
           {isDuplicate && existingReceipt && (
@@ -293,7 +285,7 @@ export const IssuanceConfirmModal: React.FC<IssuanceConfirmModalProps> = ({
             <button
               type="button"
               onClick={handleConfirmClick}
-              disabled={isSubmitting || missingDateCount > 0 || overTableLimit}
+              disabled={isSubmitting}
               className="inline-flex items-center gap-1.5 px-5 py-2 text-xs font-bold text-white bg-blue-900 hover:bg-blue-800 rounded-md shadow-xs transition-colors cursor-pointer disabled:opacity-50"
             >
               {isSubmitting ? (

@@ -192,8 +192,6 @@ export async function saveCloudReceipt(receipt: IssuedReceiptRecord): Promise<vo
   }
 }
 
-export async function reissueCloudReceipt(originalReceiptNo:string,newReceipt:IssuedReceiptRecord,reason:string):Promise<void>{const db=requireDb();const b=writeBatch(db);const now=new Date().toISOString();b.update(doc(db,'receipts',originalReceiptNo),{status:'reissued',reissueReason:reason,reissuedAt:now,reissuedTo:newReceipt.receiptNo});b.set(doc(db,'receipts',newReceipt.receiptNo),newReceipt);b.set(doc(db,'issuedReceipts',originalReceiptNo),{status:'reissued',reissueReason:reason,reissuedAt:now,reissuedTo:newReceipt.receiptNo},{merge:true});b.set(doc(db,'issuedReceipts',newReceipt.receiptNo),newReceipt);await b.commit();}
-
 export async function cancelCloudReceipt(receiptNo: string): Promise<void> {
   const firestore = requireDb();
   await updateDoc(doc(firestore, 'receipts', receiptNo), { status: 'cancelled' });
