@@ -1,14 +1,14 @@
 import React from 'react';
-import { Building2, FileText, Settings, Upload, Printer, AlertTriangle, Database, ShieldCheck } from 'lucide-react';
+import { Building2, FileText, Settings, Upload, Printer, AlertTriangle } from 'lucide-react';
 import { OrganizationInfo } from '../types/donation';
 
 interface HeaderProps {
   activeTab: 'search' | 'history' | 'excel' | 'settings' | 'print';
   setActiveTab: (tab: 'search' | 'history' | 'excel' | 'settings' | 'print') => void;
   orgInfo: OrganizationInfo;
-  donorCount: number;
-  recordCount: number;
-  issuedCount: number;
+  donorCount?: number;
+  recordCount?: number;
+  issuedCount?: number;
   openSettingsModal: () => void;
 }
 
@@ -16,9 +16,6 @@ export const Header: React.FC<HeaderProps> = ({
   activeTab,
   setActiveTab,
   orgInfo,
-  donorCount,
-  recordCount,
-  issuedCount,
   openSettingsModal,
 }) => {
   const isMissingStatutory = !orgInfo.registrationNo && !orgInfo.bizNo;
@@ -46,20 +43,8 @@ export const Header: React.FC<HeaderProps> = ({
             </div>
           </div>
 
-          {/* Quick Status Badges */}
-          <div className="hidden md:flex items-center gap-4 text-xs">
-            <div className="flex items-center gap-2 bg-slate-50 px-3 py-1.5 rounded-md border border-slate-200">
-              <Database className="w-4 h-4 text-slate-500" />
-              <span>후원건수: <strong className="text-blue-900 font-bold">{recordCount.toLocaleString()}건</strong></span>
-              <span className="text-slate-300">|</span>
-              <span>후원자: <strong className="text-slate-900 font-bold">{donorCount.toLocaleString()}명</strong></span>
-            </div>
-
-            <div className="flex items-center gap-1.5 bg-blue-50 px-3 py-1.5 rounded-md border border-blue-100 text-blue-900">
-              <FileText className="w-4 h-4 text-blue-700" />
-              <span>발급완료: <strong>{issuedCount}건</strong></span>
-            </div>
-
+          {/* Statutory warning badge if applicable */}
+          <div className="flex items-center gap-3 text-xs">
             {isMissingStatutory && (
               <button
                 onClick={openSettingsModal}
@@ -85,7 +70,7 @@ export const Header: React.FC<HeaderProps> = ({
               }`}
             >
               <FileText className="w-4 h-4" />
-              <span>영수증 발급 (후원자 검색)</span>
+              <span>영수증 발급</span>
             </button>
 
             <button
@@ -98,11 +83,6 @@ export const Header: React.FC<HeaderProps> = ({
             >
               <FileText className="w-4 h-4" />
               <span>발급내역 관리</span>
-              {issuedCount > 0 && (
-                <span className={`text-xs px-1.5 py-0.2 rounded-full ${activeTab === 'history' ? 'bg-blue-800 text-white' : 'bg-slate-200 text-slate-700'}`}>
-                  {issuedCount}
-                </span>
-              )}
             </button>
 
             <button
@@ -114,7 +94,7 @@ export const Header: React.FC<HeaderProps> = ({
               }`}
             >
               <Upload className="w-4 h-4" />
-              <span>Excel 후원자료 관리</span>
+              <span>엑셀 회원 명단 관리</span>
             </button>
           </nav>
 

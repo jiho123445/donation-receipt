@@ -1,7 +1,8 @@
 import React, { useState, useMemo } from 'react';
-import { Search, UserCheck, Users, Calendar, FileText, CheckCircle2, AlertCircle, ArrowRight, Upload, Building2 } from 'lucide-react';
+import { Search, UserCheck, Users, Calendar, FileText, CheckCircle2, AlertCircle, ArrowRight, Upload, Building2, Download } from 'lucide-react';
 import { RawDonationRecord, DonorGroup, OrganizationInfo } from '../types/donation';
 import { formatKRW, numberToHangulAmount, maskIdNumber } from '../utils/hangulCurrency';
+import { downloadSampleExcelTemplate } from '../utils/excelParser';
 
 interface DonorSearchProps {
   donations: RawDonationRecord[];
@@ -104,12 +105,15 @@ export const DonorSearch: React.FC<DonorSearchProps> = ({
     return yearDonations.reduce((sum, d) => sum + d.amount, 0);
   }, [yearDonations]);
 
-  // Available tax years across this donor's history
+  // Available tax years across this donor's history (supporting years up to 2050, sorted ascending)
   const donorYears = useMemo(() => {
-    if (!activeDonor) return [2026];
-    const yrs = Array.from(new Set(activeDonor.donations.map((d) => parseInt(d.date.split('-')[0], 10)))) as number[];
-    if (!yrs.includes(2026)) yrs.push(2026);
-    return yrs.sort((a, b) => b - a);
+    const defaultRange = Array.from({ length: 2050 - 2020 + 1 }, (_, i) => 2020 + i);
+    if (!activeDonor) return defaultRange;
+    const donorDonationYears = activeDonor.donations
+      .map((d) => parseInt(d.date.split('-')[0], 10))
+      .filter((y) => !isNaN(y));
+    const merged = new Set([...defaultRange, ...donorDonationYears]);
+    return Array.from(merged).sort((a, b) => a - b);
   }, [activeDonor]);
 
   const handleSelectHomonym = (donor: DonorGroup) => {
@@ -140,24 +144,25 @@ export const DonorSearch: React.FC<DonorSearchProps> = ({
           기부금영수증 발급시스템
         </h2>
         <p className="text-xs text-slate-500 mt-1 max-w-lg mx-auto">
-          후원자 이름을 입력하면 Excel 후원자료에서 후원내역을 자동 계산하여 법정 서식(A4)으로 발급합니다.
+          회원명을 입력하면 회원 명단 자료에서 후원내역을 자동 계산하여 법정 서식(A4)으로 발급합니다.
         </p>
 
-        <div className="mt-4 pt-4 border-t border-slate-100 flex flex-wrap items-center justify-center gap-4 text-xs">
+        <div className="mt-4 pt-4 border-t border-slate-100 flex flex-wrap items-center justify-center gap-3 text-xs">
           <button
             onClick={onOpenExcel}
             className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-blue-50 text-blue-900 font-bold rounded-lg border border-blue-200 hover:bg-blue-100 transition-colors cursor-pointer"
           >
             <Upload className="w-3.5 h-3.5" />
-            <span>Excel 파일 불러오기</span>
+            <span>회원 자료 명단</span>
           </button>
-          <div className="text-slate-600">
-            현재 후원건수: <strong className="text-blue-900 font-bold">{donations.length.toLocaleString()}건</strong>
-          </div>
-          <span className="text-slate-300">|</span>
-          <div className="text-slate-600">
-            현재 후원자 수: <strong className="text-slate-900 font-bold">{donorGroups.length.toLocaleString()}명</strong>
-          </div>
+          <button
+            onClick={() => downloadSampleExcelTemplate()}
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-emerald-50 text-emerald-900 font-bold rounded-lg border border-emerald-200 hover:bg-emerald-100 transition-colors cursor-pointer"
+            title="회원 명단 작성 가이드 및 샘플 엑셀 서식을 다운로드합니다."
+          >
+            <Download className="w-3.5 h-3.5 text-emerald-700" />
+            <span>샘플 파일 다운로드</span>
+          </button>
         </div>
       </div>
 
@@ -165,7 +170,7 @@ export const DonorSearch: React.FC<DonorSearchProps> = ({
       <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-xs space-y-4">
         <div className="text-center sm:text-left">
           <label htmlFor="donor-search-input" className="block text-sm font-bold text-slate-900 mb-1">
-            후원자의 이름을 입력하세요
+            회원의 성명 또는 회사명을 입력하세요
           </label>
           <p className="text-xs text-slate-500">
             성명을 입력하신 후 검색 버튼을 누르거나 Enter를 치세요.
@@ -444,41 +449,41 @@ export const DonorSearch: React.FC<DonorSearchProps> = ({
       )}
 
       {/* 4. Bottom Quick Action Bar */}
-      <div className="bg-slate-50 p-4 rounded-xl border border-slate-200 shadow-2xs">
-        <div className="text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-2">
+      <div className="bg-slate-50 p-5 rounded-xl border border-slate-200 shadow-2xs">
+        <div className="text-sm font-bold text-slate-800 mb-3">
           빠른 행정 메뉴
         </div>
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
           <button
             onClick={onOpenHistory}
-            className="p-3 bg-white hover:bg-slate-100 rounded-lg border border-slate-200 text-left transition-colors cursor-pointer"
+            className="p-3.5 bg-white hover:bg-slate-100 rounded-lg border border-slate-200 text-left transition-colors cursor-pointer"
           >
-            <div className="text-xs font-bold text-slate-900">발급내역 관리</div>
-            <div className="text-[10.5px] text-slate-500 mt-0.5">기존 발급대장 조회 및 재인쇄</div>
+            <div className="text-sm font-bold text-slate-900">발급내역 관리</div>
+            <div className="text-xs text-slate-600 mt-1">기존 발급대장 조회 및 재인쇄</div>
           </button>
 
           <button
             onClick={onOpenOrgSettings}
-            className="p-3 bg-white hover:bg-slate-100 rounded-lg border border-slate-200 text-left transition-colors cursor-pointer"
+            className="p-3.5 bg-white hover:bg-slate-100 rounded-lg border border-slate-200 text-left transition-colors cursor-pointer"
           >
-            <div className="text-xs font-bold text-slate-900">재단/단체정보</div>
-            <div className="text-[10.5px] text-slate-500 mt-0.5">고유번호 및 직인 설정</div>
+            <div className="text-sm font-bold text-slate-900">재단/단체정보</div>
+            <div className="text-xs text-slate-600 mt-1">고유번호 및 직인 설정</div>
           </button>
 
           <button
             onClick={onOpenExcel}
-            className="p-3 bg-white hover:bg-slate-100 rounded-lg border border-slate-200 text-left transition-colors cursor-pointer"
+            className="p-3.5 bg-white hover:bg-slate-100 rounded-lg border border-slate-200 text-left transition-colors cursor-pointer"
           >
-            <div className="text-xs font-bold text-slate-900">Excel 관리</div>
-            <div className="text-[10.5px] text-slate-500 mt-0.5">엑셀 업로드 및 샘플 서식</div>
+            <div className="text-sm font-bold text-slate-900">엑셀 회원 명단 관리</div>
+            <div className="text-xs text-slate-600 mt-1">엑셀 업로드 및 샘플 서식</div>
           </button>
 
           <button
             onClick={onOpenPrintSettings}
-            className="p-3 bg-white hover:bg-slate-100 rounded-lg border border-slate-200 text-left transition-colors cursor-pointer"
+            className="p-3.5 bg-white hover:bg-slate-100 rounded-lg border border-slate-200 text-left transition-colors cursor-pointer"
           >
-            <div className="text-xs font-bold text-slate-900">인쇄설정</div>
-            <div className="text-[10.5px] text-slate-500 mt-0.5">A4 여백 및 출력 배율 조정</div>
+            <div className="text-sm font-bold text-slate-900">인쇄설정</div>
+            <div className="text-xs text-slate-600 mt-1">A4 여백 및 출력 배율 조정</div>
           </button>
         </div>
       </div>

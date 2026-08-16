@@ -36,6 +36,8 @@ import { INITIAL_SAMPLE_DONATIONS } from './utils/sampleData';
 import {
   loadCloudOrganization,
   loadCloudReceipts,
+  loadCloudDonations,
+  batchSaveCloudDonations,
   saveCloudOrganization,
   saveCloudReceipt,
   cancelCloudReceipt,
@@ -44,6 +46,39 @@ import {
   saveCloudDonor,
   type FirestoreConnectionStatus,
 } from './utils/firebaseDb';
+
+
+function donationFingerprint(d: RawDonationRecord): string {
+  return [
+    d.donorName,
+    d.idNumber,
+    d.address,
+    d.date,
+    d.amount,
+    d.paymentMethod,
+    d.donationType,
+    d.donationCode,
+    d.content,
+  ].map((v) => String(v ?? '').trim().toLowerCase()).join('|');
+}
+
+function mergeDonationRecords(
+  existing: RawDonationRecord[],
+  incoming: RawDonationRecord[]
+): RawDonationRecord[] {
+  const merged = [...existing];
+  const fingerprints = new Set(existing.map(donationFingerprint));
+
+  for (const record of incoming) {
+    const fingerprint = donationFingerprint(record);
+    if (!fingerprints.has(fingerprint)) {
+      merged.push(record);
+      fingerprints.add(fingerprint);
+    }
+  }
+
+  return merged;
+}
 
 export default function App() {
   const [user, setUser] = useState<User | null>(null);
@@ -106,9 +141,10 @@ export default function App() {
         return;
       }
       try {
-        const [cloudOrg, cloudReceipts] = await Promise.all([
+        const [cloudOrg, cloudReceipts, cloudDonations] = await Promise.all([
           loadCloudOrganization(),
           loadCloudReceipts(),
+          loadCloudDonations(),
         ]);
         if (cloudOrg) {
           setOrgInfo(cloudOrg);
@@ -119,6 +155,8 @@ export default function App() {
           await saveCloudOrganization(localOrg);
         }
         setIssuedReceipts(cloudReceipts);
+        // 월별 업로드 자료는 Firestore에 누적 보관하고, 앱을 다시 열어도 전체 내역을 복원합니다.
+        setDonations(mergeDonationRecords([], cloudDonations));
         setFirestoreStatus({
           connected: true,
           message: `Cloud Firestore (프로젝트: ${firebaseConfig.projectId})에 정상 연결되었습니다.`,
@@ -132,17 +170,31 @@ export default function App() {
         });
         setOrgInfo(getOrganizationInfo());
         setIssuedReceipts(getIssuedReceipts());
+        setDonations([]);
       }
-      setDonations([]);
       setPrintSettings(getPrintSettings());
     });
   }, []);
 
 
-  // Update Donations Handler
-  const handleUpdateDonations = (records: RawDonationRecord[]) => {
-    // 개인정보가 포함된 Excel 자료는 브라우저 메모리에만 보관합니다.
-    setDonations(records);
+  // 월별 Excel 업로드: 기존 자료는 유지하고 새 자료만 누적합니다.
+  const handleUpdateDonations = async (records: RawDonationRecord[]) => {
+    const merged = mergeDonationRecords(donations, records);
+    const newRecords = merged.filter(
+      (record) => !donations.some((existing) => donationFingerprint(existing) === donationFingerprint(record))
+    );
+
+    setDonations(merged);
+
+    if (firebaseConfigured && auth?.currentUser && newRecords.length > 0) {
+      await batchSaveCloudDonations(newRecords);
+    }
+
+    return {
+      addedCount: newRecords.length,
+      duplicateCount: records.length - newRecords.length,
+      totalCount: merged.length,
+    };
   };
 
   // Clear Donations Handler (Privacy reset)
@@ -295,70 +347,10 @@ export default function App() {
           }
         }}
         orgInfo={orgInfo}
-        donorCount={uniqueDonorCount}
-        recordCount={totalRecordCount}
-        issuedCount={activeIssuedCount}
         openSettingsModal={() => setIsOrgSettingsOpen(true)}
       />
 
       {/* Main Content Area */}
-      {firebaseConfigured && user && (
-        <div className="no-print bg-blue-50 border-b border-blue-100 px-4 py-2 flex flex-wrap items-center justify-between gap-2 text-xs text-blue-900">
-          <div className="flex flex-wrap items-center gap-2">
-            <span className="inline-block w-2 h-2 rounded-full bg-emerald-500"></span>
-            <span>프로젝트: <strong>{firebaseConfig.projectId}</strong></span>
-            <span className="text-blue-300">|</span>
-            <span>인증 계정: <strong>{user.email}</strong></span>
-            <span className="text-blue-300">|</span>
-            <span className="text-slate-600">UID: <code className="bg-white px-1.5 py-0.5 rounded border border-blue-200 text-[11px] font-mono text-blue-950 font-bold">{user.uid}</code></span>
-          </div>
-          <button onClick={handleLogout} className="font-semibold underline text-blue-800 hover:text-blue-950 cursor-pointer">로그아웃</button>
-        </div>
-      )}
-
-      {/* Firestore Status / Error Banner */}
-      {firestoreStatus && showStatusBanner && (
-        <div className={`no-print border-b px-4 py-2.5 text-xs flex items-center justify-between ${
-          firestoreStatus.connected
-            ? 'bg-emerald-50 text-emerald-900 border-emerald-200'
-            : firestoreStatus.code === 'permission-denied' || firestoreStatus.errorDetail
-            ? 'bg-amber-50 text-amber-900 border-amber-300'
-            : 'bg-slate-100 text-slate-700 border-slate-200'
-        }`}>
-          <div className="max-w-7xl mx-auto w-full flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              {firestoreStatus.connected ? (
-                <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
-              ) : (
-                <AlertCircle className="w-4 h-4 text-amber-600 shrink-0" />
-              )}
-              <span>
-                <strong>Firestore 상태:</strong> {firestoreStatus.message}
-                {firestoreStatus.errorDetail && (
-                  <span className="ml-1 text-slate-500 font-mono text-[11px]">({firestoreStatus.code || 'error'})</span>
-                )}
-              </span>
-            </div>
-            <div className="flex items-center gap-3">
-              <button
-                onClick={checkConnection}
-                className="flex items-center gap-1 font-semibold text-slate-600 hover:text-slate-900 underline cursor-pointer"
-                title="연결 재확인"
-              >
-                <RefreshCw className="w-3 h-3" />
-                <span>재확인</span>
-              </button>
-              <button
-                onClick={() => setShowStatusBanner(false)}
-                className="text-slate-400 hover:text-slate-600 cursor-pointer p-0.5"
-                title="배너 닫기"
-              >
-                <X className="w-3.5 h-3.5" />
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
       <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6">
 
         {/* Tab 1: Search & Issue Receipt */}
@@ -389,6 +381,7 @@ export default function App() {
             donations={donations}
             onUpdateDonations={handleUpdateDonations}
             onClearDonations={handleClearDonations}
+            cloudEnabled={firebaseConfigured && !!auth?.currentUser}
           />
         )}
       </main>

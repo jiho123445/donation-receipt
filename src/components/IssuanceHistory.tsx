@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { FileText, Search, Printer, Download, Ban, Eye, CheckCircle, AlertCircle, Calendar } from 'lucide-react';
+import React, { useState, useMemo } from 'react';
+import { FileText, Search, Printer, Download, Ban, Eye, CheckCircle, AlertCircle, Calendar, RotateCcw } from 'lucide-react';
 import { IssuedReceiptRecord } from '../types/donation';
 import { formatKRW } from '../utils/hangulCurrency';
 import { exportIssuedReceiptsToExcel } from '../utils/excelParser';
@@ -18,27 +18,41 @@ export const IssuanceHistory: React.FC<IssuanceHistoryProps> = ({
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedYear, setSelectedYear] = useState<string>('all');
   const [cancelTargetNo, setCancelTargetNo] = useState<string | null>(null);
+  const [isViewCleared, setIsViewCleared] = useState(false);
 
-  // Available tax years in issued receipts
-  const availableYears = (Array.from(new Set(receipts.map((r) => r.taxYear))) as number[]).sort((a, b) => b - a);
+  // Available tax years in range up to 2050 (sorted ascending)
+  const availableYears = useMemo(() => {
+    const defaultRange = Array.from({ length: 2050 - 2020 + 1 }, (_, i) => 2020 + i);
+    const receiptYears = receipts.map((r) => r.taxYear).filter((y) => !isNaN(y));
+    const merged = new Set([...defaultRange, ...receiptYears]);
+    return Array.from(merged).sort((a, b) => a - b);
+  }, [receipts]);
 
   // Filtered receipts
-  const filteredReceipts = receipts.filter((r) => {
-    if (selectedYear !== 'all' && r.taxYear !== parseInt(selectedYear, 10)) {
-      return false;
-    }
-    if (!searchTerm.trim()) return true;
-    const term = searchTerm.trim().toLowerCase();
-    return (
-      r.donorName.toLowerCase().includes(term) ||
-      r.receiptNo.toLowerCase().includes(term) ||
-      r.issueDate.includes(term) ||
-      String(r.taxYear).includes(term)
-    );
-  });
+  const filteredReceipts = useMemo(() => {
+    if (isViewCleared) return [];
+    return receipts.filter((r) => {
+      if (selectedYear !== 'all' && r.taxYear !== parseInt(selectedYear, 10)) {
+        return false;
+      }
+      if (!searchTerm.trim()) return true;
+      const term = searchTerm.trim().toLowerCase();
+      return (
+        r.donorName.toLowerCase().includes(term) ||
+        r.receiptNo.toLowerCase().includes(term) ||
+        r.issueDate.includes(term) ||
+        String(r.taxYear).includes(term)
+      );
+    });
+  }, [receipts, selectedYear, searchTerm, isViewCleared]);
 
-  const totalActiveIssued = receipts.filter((r) => r.status === 'issued');
-  const totalIssuedAmount = totalActiveIssued.reduce((sum, r) => sum + r.totalAmount, 0);
+  const totalActiveIssued = useMemo(() => {
+    if (isViewCleared) return [];
+    return receipts.filter((r) => r.status === 'issued');
+  }, [receipts, isViewCleared]);
+
+  const displayedCount = totalActiveIssued.length;
+  const displayedAmount = totalActiveIssued.reduce((sum, r) => sum + r.totalAmount, 0);
 
   return (
     <div className="max-w-6xl mx-auto space-y-6">
@@ -51,7 +65,7 @@ export const IssuanceHistory: React.FC<IssuanceHistoryProps> = ({
           <div>
             <div className="text-xs text-slate-500 font-medium">총 발급 건수</div>
             <div className="text-xl font-extrabold text-slate-900 mt-0.5">
-              {totalActiveIssued.length.toLocaleString()} <span className="text-xs font-normal text-slate-500">건</span>
+              {displayedCount.toLocaleString()} <span className="text-xs font-normal text-slate-500">건</span>
             </div>
           </div>
         </div>
@@ -63,7 +77,7 @@ export const IssuanceHistory: React.FC<IssuanceHistoryProps> = ({
           <div>
             <div className="text-xs text-slate-500 font-medium">총 발급 금액</div>
             <div className="text-xl font-extrabold text-emerald-900 font-mono mt-0.5">
-              {formatKRW(totalIssuedAmount)} <span className="text-xs font-normal text-slate-500">원</span>
+              {formatKRW(displayedAmount)} <span className="text-xs font-normal text-slate-500">원</span>
             </div>
           </div>
         </div>
@@ -73,14 +87,33 @@ export const IssuanceHistory: React.FC<IssuanceHistoryProps> = ({
             <div className="text-xs text-slate-500 font-medium">발급대장 엑셀 백업</div>
             <div className="text-xs text-slate-600 mt-0.5">국세청 보관용 대장 출력</div>
           </div>
-          <button
-            onClick={() => exportIssuedReceiptsToExcel(receipts)}
-            disabled={receipts.length === 0}
-            className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-bold text-white bg-blue-900 hover:bg-blue-800 disabled:bg-slate-300 rounded-lg shadow-xs transition-colors cursor-pointer"
-          >
-            <Download className="w-4 h-4" />
-            <span>대장 다운로드</span>
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => exportIssuedReceiptsToExcel(receipts)}
+              disabled={receipts.length === 0}
+              className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-bold text-white bg-blue-900 hover:bg-blue-800 disabled:bg-slate-300 rounded-lg shadow-xs transition-colors cursor-pointer"
+              title="발급된 영수증 전체 내역을 엑셀로 다운로드합니다."
+            >
+              <Download className="w-4 h-4" />
+              <span>대장 다운로드</span>
+            </button>
+            <button
+              onClick={() => setIsViewCleared((prev) => !prev)}
+              className={`inline-flex items-center gap-1.5 px-3 py-2 text-xs font-bold rounded-lg shadow-xs transition-colors cursor-pointer ${
+                isViewCleared
+                  ? 'bg-emerald-600 hover:bg-emerald-700 text-white'
+                  : 'bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-300'
+              }`}
+              title={
+                isViewCleared
+                  ? '전체 발급 내역을 다시 화면에 표시합니다.'
+                  : '화면에 표시된 내역과 통계(건수, 금액)를 리셋합니다. (메모리 데이터는 안전하게 보존됩니다)'
+              }
+            >
+              <RotateCcw className="w-4 h-4" />
+              <span>{isViewCleared ? '내역 다시 불러오기' : '초기화'}</span>
+            </button>
+          </div>
         </div>
       </div>
 
@@ -137,8 +170,26 @@ export const IssuanceHistory: React.FC<IssuanceHistoryProps> = ({
               {filteredReceipts.length === 0 ? (
                 <tr>
                   <td colSpan={8} className="py-12 text-center text-slate-400">
-                    <FileText className="w-8 h-8 mx-auto mb-2 text-slate-300" />
-                    <span>발급된 기부금영수증 내역이 없습니다.</span>
+                    {isViewCleared ? (
+                      <div className="space-y-2">
+                        <RotateCcw className="w-8 h-8 mx-auto text-slate-400" />
+                        <div className="text-sm font-bold text-slate-700">화면 발급내역이 초기화되었습니다.</div>
+                        <p className="text-xs text-slate-500 max-w-sm mx-auto">
+                          화면에서만 리셋되었으며, 실제 발급 데이터는 메모리에 안전하게 보관되어 있습니다.
+                        </p>
+                        <button
+                          onClick={() => setIsViewCleared(false)}
+                          className="mt-2 inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold text-blue-900 bg-blue-50 hover:bg-blue-100 rounded-md border border-blue-200 transition-colors cursor-pointer"
+                        >
+                          <span>전체 내역 다시 불러오기</span>
+                        </button>
+                      </div>
+                    ) : (
+                      <>
+                        <FileText className="w-8 h-8 mx-auto mb-2 text-slate-300" />
+                        <span>발급된 기부금영수증 내역이 없습니다.</span>
+                      </>
+                    )}
                   </td>
                 </tr>
               ) : (
