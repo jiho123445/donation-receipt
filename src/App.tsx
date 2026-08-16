@@ -33,6 +33,7 @@ import { ReceiptPreviewModal } from './components/ReceiptPreviewModal';
 import { OfficialReceiptA4 } from './components/OfficialReceiptA4';
 import { LoginScreen } from './components/LoginScreen';
 import { INITIAL_SAMPLE_DONATIONS } from './utils/sampleData';
+import { mergeDonationRecords } from './utils/donationDedup';
 import {
   loadCloudOrganization,
   loadCloudReceipts,
@@ -46,39 +47,6 @@ import {
   saveCloudDonor,
   type FirestoreConnectionStatus,
 } from './utils/firebaseDb';
-
-
-function donationFingerprint(d: RawDonationRecord): string {
-  return [
-    d.donorName,
-    d.idNumber,
-    d.address,
-    d.date,
-    d.amount,
-    d.paymentMethod,
-    d.donationType,
-    d.donationCode,
-    d.content,
-  ].map((v) => String(v ?? '').trim().toLowerCase()).join('|');
-}
-
-function mergeDonationRecords(
-  existing: RawDonationRecord[],
-  incoming: RawDonationRecord[]
-): RawDonationRecord[] {
-  const merged = [...existing];
-  const fingerprints = new Set(existing.map(donationFingerprint));
-
-  for (const record of incoming) {
-    const fingerprint = donationFingerprint(record);
-    if (!fingerprints.has(fingerprint)) {
-      merged.push(record);
-      fingerprints.add(fingerprint);
-    }
-  }
-
-  return merged;
-}
 
 export default function App() {
   const [user, setUser] = useState<User | null>(null);
@@ -155,8 +123,9 @@ export default function App() {
           await saveCloudOrganization(localOrg);
         }
         setIssuedReceipts(cloudReceipts);
-        // 월별 업로드 자료는 Firestore에 누적 보관하고, 앱을 다시 열어도 전체 내역을 복원합니다.
-        setDonations(mergeDonationRecords([], cloudDonations));
+        // 기존 Firestore 자료에 중복 행이 있더라도 검색/영수증 합계에서는 한 번만 계산합니다.
+        const normalizedCloudDonations = mergeDonationRecords([], cloudDonations).records;
+        setDonations(normalizedCloudDonations);
         setFirestoreStatus({
           connected: true,
           message: `Cloud Firestore (프로젝트: ${firebaseConfig.projectId})에 정상 연결되었습니다.`,
@@ -170,30 +139,29 @@ export default function App() {
         });
         setOrgInfo(getOrganizationInfo());
         setIssuedReceipts(getIssuedReceipts());
-        setDonations([]);
       }
       setPrintSettings(getPrintSettings());
     });
   }, []);
 
 
-  // 월별 Excel 업로드: 기존 자료는 유지하고 새 자료만 누적합니다.
+  // Update Donations Handler
+  // 월별 Excel 자료는 기존 자료를 지우지 않고 누적합니다.
+  // 동일한 납부내역을 다시 올리면 fingerprint로 중복을 제외합니다.
   const handleUpdateDonations = async (records: RawDonationRecord[]) => {
-    const merged = mergeDonationRecords(donations, records);
-    const newRecords = merged.filter(
-      (record) => !donations.some((existing) => donationFingerprint(existing) === donationFingerprint(record))
-    );
+    const { records: merged, added, duplicates } = mergeDonationRecords(donations, records);
+
+    if (firebaseConfigured && auth?.currentUser && added.length > 0) {
+      // Firebase 저장이 성공한 뒤 화면 상태를 갱신하여 저장 실패 시 허위로 누적된 것처럼 보이지 않게 합니다.
+      await batchSaveCloudDonations(added);
+    }
 
     setDonations(merged);
 
-    if (firebaseConfigured && auth?.currentUser && newRecords.length > 0) {
-      await batchSaveCloudDonations(newRecords);
-    }
-
     return {
-      addedCount: newRecords.length,
-      duplicateCount: records.length - newRecords.length,
-      totalCount: merged.length,
+      total: merged.length,
+      added: added.length,
+      duplicates,
     };
   };
 
@@ -381,7 +349,7 @@ export default function App() {
             donations={donations}
             onUpdateDonations={handleUpdateDonations}
             onClearDonations={handleClearDonations}
-            cloudEnabled={firebaseConfigured && !!auth?.currentUser}
+            onLoadSample={() => setDonations(INITIAL_SAMPLE_DONATIONS)}
           />
         )}
       </main>

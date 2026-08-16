@@ -14,38 +14,6 @@ const COLUMN_SYNONYMS = {
   content: ['기부내용', '내용', '적요', '사업명', '후원내용', '품목'],
 };
 
-
-function createStableDonationId(record: {
-  donorName?: string;
-  idNumber?: string;
-  address?: string;
-  date?: string;
-  amount?: number;
-  paymentMethod?: string;
-  donationType?: string;
-  donationCode?: string;
-  content?: string;
-}): string {
-  const source = [
-    record.donorName,
-    record.idNumber,
-    record.address,
-    record.date,
-    record.amount,
-    record.paymentMethod,
-    record.donationType,
-    record.donationCode,
-    record.content,
-  ].map((v) => String(v ?? '').trim().toLowerCase()).join('|');
-
-  let hash = 2166136261;
-  for (let i = 0; i < source.length; i++) {
-    hash ^= source.charCodeAt(i);
-    hash = Math.imul(hash, 16777619);
-  }
-  return `donation-${(hash >>> 0).toString(16)}`;
-}
-
 function normalizeHeaderName(header: string): string {
   return header.replace(/\s+/g, '').replace(/[()\[\]_-]/g, '').toLowerCase();
 }
@@ -175,7 +143,7 @@ export async function parseDonationExcel(file: File): Promise<ParseResult> {
     if (!row || row.length === 0) continue;
 
     const recordObj: Partial<RawDonationRecord> = {
-      id: `pending-${r}`,
+      id: `rec-${Date.now()}-${r}-${Math.random().toString(36).substring(2, 6)}`,
       paymentMethod: '',
       donationType: '',
       donationCode: '',
@@ -220,7 +188,6 @@ export async function parseDonationExcel(file: File): Promise<ParseResult> {
       recordObj.amount !== undefined &&
       recordObj.amount > 0
     ) {
-      recordObj.id = createStableDonationId(recordObj);
       records.push(recordObj as RawDonationRecord);
     }
   }
