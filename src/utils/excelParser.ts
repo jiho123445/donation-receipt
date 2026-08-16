@@ -3,11 +3,11 @@ import { RawDonationRecord, IssuedReceiptRecord } from '../types/donation';
 
 // Flexible column matcher
 const COLUMN_SYNONYMS = {
-  donorName: ['성명', '이름', '후원자명', '기부자명', '기부자', '후원자', '회원명', '이름(상호)', '상호'],
+  donorName: ['성명', '성명후원자명', '이름', '후원자명', '기부자명', '기부자', '후원자', '회원명', '이름상호', '상호'],
   idNumber: ['주민등록번호', '주민번호', '주민번호/사업자번호', '사업자번호', '사업자등록번호', '식별번호', '고유식별번호', '주민/사업자번호'],
   address: ['주소', '소재지', '거주지', '기부자주소', '도로명주소', '본점소재지', '사업장소재지'],
   date: ['후원일', '후원일자', '납부일', '납부일자', '기부일', '기부일자', '일자', '날짜', '입금일', '입금일자'],
-  amount: ['후원금', '후원금액', '납부금액', '금액', '기부금액', '기부금', '입금액', '수납액'],
+  amount: ['후원금', '후원금액', '후원금액원', '납부금액', '납부금액원', '금액', '금액원', '기부금액', '기부금', '입금액', '수납액', '납부액'],
   paymentMethod: ['후원방법', '납부방법', '결제방법', '이체방법', '수단', '결제수단', '구분방법'],
   donationType: ['기부금유형', '기부유형', '유형', '기부구분', '구분'],
   donationCode: ['기부금코드', '코드', '기부코드'],
@@ -15,7 +15,11 @@ const COLUMN_SYNONYMS = {
 };
 
 function normalizeHeaderName(header: string): string {
-  return header.replace(/\s+/g, '').replace(/[()\[\]_-]/g, '').toLowerCase();
+  return String(header ?? '')
+    .replace(/\s+/g, '')
+    .replace(/[()\[\]{}<>_\-\/\\:·.,]/g, '')
+    .replace(/\(원\)|원$/gi, '')
+    .toLowerCase();
 }
 
 function findMatchingField(header: string): keyof typeof COLUMN_SYNONYMS | null {
@@ -86,11 +90,27 @@ function parseExcelDate(val: any): string {
 }
 
 function parseExcelAmount(val: any): number {
-  if (typeof val === 'number') return Math.round(val);
-  if (!val) return 0;
-  const str = String(val).replace(/[^\d.-]/g, '');
-  const parsed = parseFloat(str);
-  return isNaN(parsed) ? 0 : Math.round(parsed);
+  if (typeof val === 'number' && Number.isFinite(val)) return Math.round(val);
+  if (val === null || val === undefined || val === '') return 0;
+
+  // Handle Excel formula/cell objects defensively.
+  if (typeof val === 'object') {
+    const candidate = (val as any).v ?? (val as any).value ?? (val as any).w;
+    if (candidate !== undefined && candidate !== val) return parseExcelAmount(candidate);
+  }
+
+  let str = String(val).trim();
+  // Common accounting/Excel representations such as "30,000원", "\u20a9 30,000", "30000.00".
+  str = str.replace(/[₩원\s,]/g, '');
+  const parsed = Number(str);
+  if (Number.isFinite(parsed)) return Math.round(parsed);
+
+  // Last-resort extraction for strings such as "후원금액: 30,000원".
+  const match = String(val).match(/-?\d+(?:[,.]\d+)*/);
+  if (!match) return 0;
+  const normalized = match[0].replace(/,/g, '');
+  const fallback = Number(normalized);
+  return Number.isFinite(fallback) ? Math.round(fallback) : 0;
 }
 
 export interface ParseResult {
@@ -103,14 +123,14 @@ export interface ParseResult {
 export async function parseDonationExcel(file: File): Promise<ParseResult> {
   const inferredPeriod = inferPeriodFromFileName(file.name);
   const buffer = await file.arrayBuffer();
-  const workbook = XLSX.read(buffer, { type: 'array', cellDates: false });
+  const workbook = XLSX.read(buffer, { type: 'array', cellDates: false, cellFormula: true });
   
   if (workbook.SheetNames.length === 0) {
     throw new Error('엑셀 파일에 시트가 존재하지 않습니다.');
   }
 
   const firstSheet = workbook.Sheets[workbook.SheetNames[0]];
-  const rawJson: any[][] = XLSX.utils.sheet_to_json(firstSheet, { header: 1, defval: '' });
+  const rawJson: any[][] = XLSX.utils.sheet_to_json(firstSheet, { header: 1, defval: '', raw: false });
 
   if (rawJson.length === 0) {
     throw new Error('엑셀 파일이 비어있습니다.');
@@ -209,14 +229,45 @@ export async function parseDonationExcel(file: File): Promise<ParseResult> {
     // 월별 파일명(예: 2026년 8월.xlsx)에서 기간을 찾았다면 period에 저장합니다.
     // 실제 후원일자가 입력된 경우에는 기존 날짜를 그대로 보존합니다.
     const validDate = !recordObj.date || /^\d{4}-\d{2}-\d{2}$/.test(recordObj.date);
-    if (
-      hasData &&
-      recordObj.donorName &&
-      validDate &&
-      recordObj.amount !== undefined &&
-      recordObj.amount > 0
-    ) {
+    // 업로드 필수값은 성명 + 0보다 큰 후원금액뿐입니다.
+    // 주민/사업자번호, 주소, 후원일자, 기부금유형/코드가 비어 있어도 저장합니다.
+    if (recordObj.donorName && validDate && Number(recordObj.amount) > 0) {
       records.push(recordObj as RawDonationRecord);
+    }
+  }
+
+  // 일부 Excel 파일은 금액 셀이 수식/서식 문자열이거나 헤더에 특수문자가 섞여 있어
+  // 첫 번째 매핑만으로 행을 잡지 못할 수 있습니다. 이 경우 성명/금액 열을 다시 찾아
+  // '성명 + 양수 금액'만으로 한 번 더 안전하게 판별합니다.
+  if (records.length === 0) {
+    let donorCol = -1;
+    let amountCol = -1;
+    const header = rawJson[headerRowIndex] || [];
+    header.forEach((cell: any, idx: number) => {
+      const field = findMatchingField(String(cell ?? ''));
+      if (field === 'donorName' && donorCol < 0) donorCol = idx;
+      if (field === 'amount' && amountCol < 0) amountCol = idx;
+    });
+
+    if (donorCol >= 0 && amountCol >= 0) {
+      for (let r = headerRowIndex + 1; r < rawJson.length; r++) {
+        const row = rawJson[r] || [];
+        const donorName = String(row[donorCol] ?? '').trim();
+        const amount = parseExcelAmount(row[amountCol]);
+        if (!donorName || amount <= 0) continue;
+
+        records.push({
+          id: `rec-${Date.now()}-${r}-${Math.random().toString(36).substring(2, 6)}`,
+          donorName,
+          idNumber: '',
+          address: '',
+          date: '',
+          period: inferredPeriod || undefined,
+          amount,
+          paymentMethod: '계좌이체',
+          content: '후원금',
+        });
+      }
     }
   }
 
