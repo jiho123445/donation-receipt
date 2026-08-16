@@ -18,7 +18,15 @@ export const IssuanceHistory: React.FC<IssuanceHistoryProps> = ({
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedYear, setSelectedYear] = useState<string>('all');
   const [cancelTargetNo, setCancelTargetNo] = useState<string | null>(null);
-  const [isViewCleared, setIsViewCleared] = useState(false);
+  // '초기화'는 실제 발급 데이터를 삭제하지 않고, 화면 표시만 초기화합니다.
+  // 탭을 이동했다가 다시 돌아와도 초기화 상태가 유지되도록 sessionStorage에 보관합니다.
+  const [isViewCleared, setIsViewCleared] = useState(() => {
+    try {
+      return sessionStorage.getItem('neobne_issuance_history_cleared') === '1';
+    } catch {
+      return false;
+    }
+  });
 
   // Available tax years in range up to 2050 (sorted ascending)
   const availableYears = useMemo(() => {
@@ -46,13 +54,52 @@ export const IssuanceHistory: React.FC<IssuanceHistoryProps> = ({
     });
   }, [receipts, selectedYear, searchTerm, isViewCleared]);
 
+  // 상단 통계도 현재 선택한 연도와 화면 초기화 상태를 동일하게 적용합니다.
   const totalActiveIssued = useMemo(() => {
     if (isViewCleared) return [];
-    return receipts.filter((r) => r.status === 'issued');
-  }, [receipts, isViewCleared]);
+    return receipts.filter((r) => {
+      if (r.status !== 'issued') return false;
+      if (selectedYear !== 'all' && r.taxYear !== parseInt(selectedYear, 10)) return false;
+      return true;
+    });
+  }, [receipts, selectedYear, isViewCleared]);
 
   const displayedCount = totalActiveIssued.length;
   const displayedAmount = totalActiveIssued.reduce((sum, r) => sum + r.totalAmount, 0);
+
+  const handleResetView = () => {
+    setIsViewCleared(true);
+    setSelectedYear('all');
+    setSearchTerm('');
+    try {
+      sessionStorage.setItem('neobne_issuance_history_cleared', '1');
+    } catch {
+      // sessionStorage가 차단된 환경에서도 화면 초기화는 정상 동작합니다.
+    }
+  };
+
+  const handleYearChange = (year: string) => {
+    setSelectedYear(year);
+    // 초기화 후 '전체 연도'가 아니라 실제 연도를 선택했을 때만 내역을 다시 표시합니다.
+    if (year !== 'all') {
+      setIsViewCleared(false);
+      try {
+        sessionStorage.removeItem('neobne_issuance_history_cleared');
+      } catch {
+        // ignore storage errors
+      }
+    }
+  };
+
+  const handleRestoreAll = () => {
+    setIsViewCleared(false);
+    setSelectedYear('all');
+    try {
+      sessionStorage.removeItem('neobne_issuance_history_cleared');
+    } catch {
+      // ignore storage errors
+    }
+  };
 
   return (
     <div className="max-w-6xl mx-auto space-y-6">
@@ -98,7 +145,7 @@ export const IssuanceHistory: React.FC<IssuanceHistoryProps> = ({
               <span>대장 다운로드</span>
             </button>
             <button
-              onClick={() => setIsViewCleared((prev) => !prev)}
+              onClick={isViewCleared ? handleRestoreAll : handleResetView}
               className={`inline-flex items-center gap-1.5 px-3 py-2 text-xs font-bold rounded-lg shadow-xs transition-colors cursor-pointer ${
                 isViewCleared
                   ? 'bg-emerald-600 hover:bg-emerald-700 text-white'
@@ -106,8 +153,8 @@ export const IssuanceHistory: React.FC<IssuanceHistoryProps> = ({
               }`}
               title={
                 isViewCleared
-                  ? '전체 발급 내역을 다시 화면에 표시합니다.'
-                  : '화면에 표시된 내역과 통계(건수, 금액)를 리셋합니다. (메모리 데이터는 안전하게 보존됩니다)'
+                  ? '전체 발급 내역을 다시 화면에 표시합니다. (실제 발급 데이터는 삭제되지 않았습니다.)'
+                  : '화면 표시만 초기화합니다. 실제 발급 데이터는 삭제하지 않습니다. 초기화 후 연도를 선택하면 해당 연도 내역이 다시 표시됩니다.'
               }
             >
               <RotateCcw className="w-4 h-4" />
@@ -137,7 +184,7 @@ export const IssuanceHistory: React.FC<IssuanceHistoryProps> = ({
           </div>
           <select
             value={selectedYear}
-            onChange={(e) => setSelectedYear(e.target.value)}
+            onChange={(e) => handleYearChange(e.target.value)}
             className="px-3 py-2 text-xs border border-slate-300 rounded-lg bg-white font-medium focus:ring-2 focus:ring-blue-900"
           >
             <option value="all">전체 연도</option>
@@ -175,10 +222,10 @@ export const IssuanceHistory: React.FC<IssuanceHistoryProps> = ({
                         <RotateCcw className="w-8 h-8 mx-auto text-slate-400" />
                         <div className="text-sm font-bold text-slate-700">화면 발급내역이 초기화되었습니다.</div>
                         <p className="text-xs text-slate-500 max-w-sm mx-auto">
-                          화면에서만 리셋되었으며, 실제 발급 데이터는 메모리에 안전하게 보관되어 있습니다.
+                          화면 표시만 초기화되었으며, 실제 발급 데이터는 Firebase에 안전하게 보관되어 있습니다. 연도를 선택하면 해당 연도 내역을 다시 표시합니다.
                         </p>
                         <button
-                          onClick={() => setIsViewCleared(false)}
+                          onClick={handleRestoreAll}
                           className="mt-2 inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold text-blue-900 bg-blue-50 hover:bg-blue-100 rounded-md border border-blue-200 transition-colors cursor-pointer"
                         >
                           <span>전체 내역 다시 불러오기</span>
