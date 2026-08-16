@@ -149,11 +149,11 @@ export default function App() {
   // 월별 Excel 자료는 기존 자료를 지우지 않고 누적합니다.
   // 동일한 납부내역을 다시 올리면 fingerprint로 중복을 제외합니다.
   const handleUpdateDonations = async (records: RawDonationRecord[]) => {
-    const { records: merged, added, duplicates } = mergeDonationRecords(donations, records);
+    const { records: merged, added, updated, duplicates } = mergeDonationRecords(donations, records);
 
-    if (firebaseConfigured && auth?.currentUser && added.length > 0) {
-      // Firebase 저장이 성공한 뒤 화면 상태를 갱신하여 저장 실패 시 허위로 누적된 것처럼 보이지 않게 합니다.
-      await batchSaveCloudDonations(added);
+    if (firebaseConfigured && auth?.currentUser && (added.length > 0 || updated.length > 0)) {
+      // 신규 납부내역뿐 아니라 기존 레코드의 주민번호/주소/후원일자가 보강된 경우도 Firebase에 반영합니다.
+      await batchSaveCloudDonations([...added, ...updated]);
     }
 
     setDonations(merged);

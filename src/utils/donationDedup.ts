@@ -1,10 +1,8 @@
 import type { RawDonationRecord } from '../types/donation';
 
 /**
- * 동일한 납부내역을 다시 업로드했을 때 중복 합산하지 않기 위한 식별값입니다.
- * 회원명 + 식별번호/주소 + 납부일 + 금액 + 납부방법 + 기부내용을 기준으로 합니다.
- * 기부금유형/기부금코드는 선택 항목이므로 중복 판별 기준에서 제외합니다.
- * 그래야 같은 납부내역을 한 번은 빈 유형/코드로, 다음에는 유형/코드를 채워 다시 올려도 중복 합산되지 않습니다.
+ * 동일 납부내역의 중복 저장을 막습니다.
+ * ID/주소가 새로 채워진 경우에도 기존의 같은 납부건을 찾아 기존 레코드를 보강합니다.
  */
 export function getDonationFingerprint(record: RawDonationRecord): string {
   const identity = record.idNumber?.trim()
@@ -18,15 +16,39 @@ export function getDonationFingerprint(record: RawDonationRecord): string {
     Math.round(record.amount || 0),
     record.paymentMethod || '',
     record.content || '',
-  ]
-    .map((value) => String(value).trim().replace(/\s+/g, ' '))
-    .join('|')
-    .toLowerCase();
+  ].map((value) => String(value).trim().replace(/\s+/g, ' ')).join('|').toLowerCase();
 }
 
-/** Firestore 문서 ID로 사용할 수 있는 안정적인 해시값을 생성합니다. */
+// ID/주소가 한쪽 레코드에만 있는 경우에도 같은 납부건인지 판단하기 위한 보조 키
+function getPaymentFingerprint(record: RawDonationRecord): string {
+  const month = (record.date || '').slice(0, 7) || record.period || '';
+  return [
+    record.donorName,
+    month,
+    Math.round(record.amount || 0),
+    record.paymentMethod || '',
+    record.content || '',
+  ].map((value) => String(value).trim().replace(/\s+/g, ' ')).join('|').toLowerCase();
+}
+
+function enrich(existing: RawDonationRecord, incoming: RawDonationRecord): RawDonationRecord {
+  return {
+    ...existing,
+    donorName: existing.donorName || incoming.donorName,
+    idNumber: existing.idNumber || incoming.idNumber || '',
+    address: existing.address || incoming.address || '',
+    date: existing.date || incoming.date || '',
+    period: existing.period || incoming.period,
+    paymentMethod: existing.paymentMethod || incoming.paymentMethod || '계좌이체',
+    donationType: existing.donationType || incoming.donationType,
+    donationCode: existing.donationCode || incoming.donationCode,
+    content: existing.content || incoming.content || '후원금',
+    amount: Math.round(existing.amount || incoming.amount || 0),
+  };
+}
+
 export function getStableDonationId(record: RawDonationRecord): string {
-  const input = getDonationFingerprint(record);
+  const input = getPaymentFingerprint(record) + `|${record.idNumber || ''}|${record.address || ''}`;
   let hash = 2166136261;
   for (let i = 0; i < input.length; i += 1) {
     hash ^= input.charCodeAt(i);
@@ -35,38 +57,59 @@ export function getStableDonationId(record: RawDonationRecord): string {
   return `donation_${(hash >>> 0).toString(16).padStart(8, '0')}`;
 }
 
-/** 기존 데이터와 신규 업로드 데이터를 중복 없이 합칩니다. */
 export function mergeDonationRecords(
   existing: RawDonationRecord[],
   incoming: RawDonationRecord[]
-): { records: RawDonationRecord[]; added: RawDonationRecord[]; duplicates: number } {
-  const seen = new Set<string>();
+): { records: RawDonationRecord[]; added: RawDonationRecord[]; updated: RawDonationRecord[]; duplicates: number } {
   const records: RawDonationRecord[] = [];
+  const exactSeen = new Set<string>();
+  const paymentIndex = new Map<string, number>();
   let duplicates = 0;
 
-  for (const record of existing) {
-    const fingerprint = getDonationFingerprint(record);
-    if (seen.has(fingerprint)) continue;
-    seen.add(fingerprint);
+  for (const raw of existing) {
+    const record = { ...raw, amount: Math.round(raw.amount || 0) };
+    const exact = getDonationFingerprint(record);
+    if (exactSeen.has(exact)) continue;
+    exactSeen.add(exact);
+    paymentIndex.set(getPaymentFingerprint(record), records.length);
     records.push(record);
   }
 
   const added: RawDonationRecord[] = [];
+  const updated: RawDonationRecord[] = [];
   for (const raw of incoming) {
     const normalized: RawDonationRecord = {
       ...raw,
       id: getStableDonationId(raw),
+      idNumber: raw.idNumber?.trim() || '',
+      address: raw.address?.trim() || '',
+      date: raw.date || '',
       amount: Math.round(raw.amount || 0),
     };
-    const fingerprint = getDonationFingerprint(normalized);
-    if (seen.has(fingerprint)) {
+
+    const exact = getDonationFingerprint(normalized);
+    if (exactSeen.has(exact)) {
       duplicates += 1;
       continue;
     }
-    seen.add(fingerprint);
+
+    const paymentKey = getPaymentFingerprint(normalized);
+    const existingIndex = paymentIndex.get(paymentKey);
+    if (existingIndex !== undefined) {
+      // 기존 자료에 주민번호/주소/날짜 등이 비어 있었다면 새 자료의 값을 반영합니다.
+      const merged = enrich(records[existingIndex], normalized);
+      records[existingIndex] = merged;
+      updated.push(merged);
+      exactSeen.add(getDonationFingerprint(merged));
+      duplicates += 1;
+      continue;
+    }
+
+    exactSeen.add(exact);
+    paymentIndex.set(paymentKey, records.length);
     records.push(normalized);
     added.push(normalized);
   }
 
-  return { records, added, duplicates };
+  return { records, added, updated, duplicates };
 }

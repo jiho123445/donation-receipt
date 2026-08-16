@@ -6,7 +6,7 @@ const COLUMN_SYNONYMS = {
   donorName: ['성명', '성명후원자명', '이름', '후원자명', '기부자명', '기부자', '후원자', '회원명', '이름상호', '상호'],
   idNumber: ['주민등록번호', '주민번호', '주민번호/사업자번호', '사업자번호', '사업자등록번호', '식별번호', '고유식별번호', '주민/사업자번호'],
   address: ['주소', '소재지', '거주지', '기부자주소', '도로명주소', '본점소재지', '사업장소재지'],
-  date: ['후원일', '후원일자', '납부일', '납부일자', '기부일', '기부일자', '일자', '날짜', '입금일', '입금일자'],
+  date: ['후원일', '후원일자', '후원연월일', '납부일', '납부일자', '납부연월일', '연월일', '기부일', '기부일자', '기부연월일', '일자', '날짜', '입금일', '입금일자', '입금연월일'],
   amount: ['후원금', '후원금액', '후원금액원', '납부금액', '납부금액원', '금액', '금액원', '기부금액', '기부금', '입금액', '수납액', '납부액'],
   paymentMethod: ['후원방법', '납부방법', '결제방법', '이체방법', '수단', '결제수단', '구분방법'],
   donationType: ['기부금유형', '기부유형', '유형', '기부구분', '구분'],
@@ -55,38 +55,41 @@ function inferPeriodFromFileName(fileName: string): string {
 }
 
 function parseExcelDate(val: any): string {
-  if (!val) {
-    return '';
+  if (val === null || val === undefined || val === '') return '';
+
+  if (val instanceof Date && !Number.isNaN(val.getTime())) {
+    const y = val.getFullYear();
+    const m = String(val.getMonth() + 1).padStart(2, '0');
+    const d = String(val.getDate()).padStart(2, '0');
+    return `${y}-${m}-${d}`;
   }
 
-  // If val is a number (Excel serial date number)
-  if (typeof val === 'number') {
+  // Excel serial date number
+  if (typeof val === 'number' && Number.isFinite(val)) {
     const dateObj = XLSX.SSF.parse_date_code(val);
-    if (dateObj) {
-      const y = dateObj.y;
-      const m = String(dateObj.m).padStart(2, '0');
-      const d = String(dateObj.d).padStart(2, '0');
-      return `${y}-${m}-${d}`;
+    if (dateObj?.y && dateObj?.m && dateObj?.d) {
+      return `${dateObj.y}-${String(dateObj.m).padStart(2, '0')}-${String(dateObj.d).padStart(2, '0')}`;
     }
   }
 
   const str = String(val).trim();
-  // Match YYYY-MM-DD, YYYY.MM.DD, YYYY/MM/DD
-  const matched = str.match(/(\d{4})[-./](\d{1,2})[-./](\d{1,2})/);
+  if (!str) return '';
+
+  // YYYY-MM-DD / YYYY.MM.DD / YYYY/MM/DD / YYYY년 M월 D일 / YYYY년 M월 D일
+  const matched = str.match(/(\d{4})\s*(?:년|[-./])\s*(\d{1,2})\s*(?:월|[-./])\s*(\d{1,2})\s*일?/);
   if (matched) {
-    const y = matched[1];
-    const m = matched[2].padStart(2, '0');
-    const d = matched[3].padStart(2, '0');
-    return `${y}-${m}-${d}`;
+    return `${matched[1]}-${matched[2].padStart(2, '0')}-${matched[3].padStart(2, '0')}`;
   }
 
-  // Match 8-digit YYYYMMDD
+  // 8-digit YYYYMMDD
   const eightDigit = str.match(/^(\d{4})(\d{2})(\d{2})$/);
-  if (eightDigit) {
-    return `${eightDigit[1]}-${eightDigit[2]}-${eightDigit[3]}`;
-  }
+  if (eightDigit) return `${eightDigit[1]}-${eightDigit[2]}-${eightDigit[3]}`;
 
-  return str;
+  // Sometimes Excel text is prefixed/suffixed with spaces or time.
+  const embedded = str.match(/(20\d{2})[-./](\d{1,2})[-./](\d{1,2})/);
+  if (embedded) return `${embedded[1]}-${embedded[2].padStart(2, '0')}-${embedded[3].padStart(2, '0')}`;
+
+  return '';
 }
 
 function parseExcelAmount(val: any): number {
@@ -202,12 +205,21 @@ export async function parseDonationExcel(file: File): Promise<ParseResult> {
         hasData = true;
       }
 
+      const cellText = (() => {
+        if (val === null || val === undefined) return '';
+        if (typeof val === 'object') {
+          const candidate = (val as any).w ?? (val as any).v ?? (val as any).value;
+          return candidate === undefined || candidate === null ? '' : String(candidate).trim();
+        }
+        return String(val).trim();
+      })();
+
       if (fieldKey === 'donorName') {
-        recordObj.donorName = String(val || '').trim();
+        recordObj.donorName = cellText;
       } else if (fieldKey === 'idNumber') {
-        recordObj.idNumber = String(val || '').trim();
+        recordObj.idNumber = cellText;
       } else if (fieldKey === 'address') {
-        recordObj.address = String(val || '').trim();
+        recordObj.address = cellText;
       } else if (fieldKey === 'date') {
         recordObj.date = parseExcelDate(val);
       } else if (fieldKey === 'amount') {
