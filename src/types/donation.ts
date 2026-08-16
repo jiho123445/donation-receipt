@@ -3,7 +3,8 @@ export interface RawDonationRecord {
   donorName: string;
   idNumber: string; // 주민등록번호 or 사업자등록번호 (e.g. 700101-1234567)
   address: string;
-  date: string; // YYYY-MM-DD
+  date: string; // YYYY-MM-DD; 날짜가 없는 월별 자료는 빈 문자열일 수 있습니다.
+  period?: string; // YYYY-MM; Excel 파일명에서 추정한 월별 관리 기간
   amount: number;
   paymentMethod: string; // 계좌이체, CMS, 현금 등
   donationType?: string; // 일반기부금, 지정기부금 등

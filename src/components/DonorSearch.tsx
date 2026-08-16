@@ -35,7 +35,7 @@ export const DonorSearch: React.FC<DonorSearchProps> = ({
     for (const rec of donations) {
       // Create a composite identifier
       const key = `${rec.donorName.trim()}__${rec.idNumber?.trim() || rec.address?.trim() || 'default'}`;
-      const recYear = parseInt(rec.date.split('-')[0], 10) || 2026;
+      const recYear = parseInt((rec.date || rec.period || '').split('-')[0], 10) || 2026;
 
       if (!map.has(key)) {
         map.set(key, {
@@ -96,7 +96,7 @@ export const DonorSearch: React.FC<DonorSearchProps> = ({
   const yearDonations = useMemo(() => {
     if (!activeDonor) return [];
     return activeDonor.donations.filter((d) => {
-      const y = parseInt(d.date.split('-')[0], 10);
+      const y = parseInt((d.date || d.period || '').split('-')[0], 10);
       return y === selectedTaxYear;
     });
   }, [activeDonor, selectedTaxYear]);
@@ -110,7 +110,7 @@ export const DonorSearch: React.FC<DonorSearchProps> = ({
     const defaultRange = Array.from({ length: 2050 - 2020 + 1 }, (_, i) => 2020 + i);
     if (!activeDonor) return defaultRange;
     const donorDonationYears = activeDonor.donations
-      .map((d) => parseInt(d.date.split('-')[0], 10))
+      .map((d) => parseInt((d.date || d.period || '').split('-')[0], 10))
       .filter((y) => !isNaN(y));
     const merged = new Set([...defaultRange, ...donorDonationYears]);
     return Array.from(merged).sort((a, b) => a - b);
@@ -394,7 +394,7 @@ export const DonorSearch: React.FC<DonorSearchProps> = ({
                   <tbody className="divide-y divide-slate-200">
                     {yearDonations.map((d, idx) => (
                       <tr key={d.id || idx} className="hover:bg-slate-50">
-                        <td className="px-4 py-2.5 font-mono text-slate-700">{d.date}</td>
+                        <td className="px-4 py-2.5 font-mono text-slate-700">{d.date || `${d.period || ''}`}</td>
                         <td className="px-4 py-2.5 text-slate-600">{d.paymentMethod}</td>
                         <td className="px-4 py-2.5 text-slate-900 font-medium">{d.content || '후원금'}</td>
                         <td className="px-4 py-2.5 text-slate-600">

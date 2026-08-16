@@ -30,6 +30,26 @@ function findMatchingField(header: string): keyof typeof COLUMN_SYNONYMS | null 
   return null;
 }
 
+function inferPeriodFromFileName(fileName: string): string {
+  const name = String(fileName || '').replace(/\s+/g, '');
+  let match = name.match(/(20\d{2})[-_.]?(0?[1-9]|1[0-2])월?/i);
+  if (!match) match = name.match(/(20\d{2})년(0?[1-9]|1[0-2])월?/i);
+  if (match) {
+    return `${match[1]}-${String(Number(match[2])).padStart(2, '0')}`;
+  }
+
+  // 파일명에 '8월', '7월'처럼 월만 있는 경우 현재 연도를 사용합니다.
+  // 날짜가 없는 월별 회원자료를 관리하기 위한 보조값이며, 실제 후원일자가 있으면 그 날짜를 우선합니다.
+  const monthOnly = name.match(/(?:^|[^0-9])(0?[1-9]|1[0-2])월(?:[^0-9]|$)/i);
+  if (monthOnly) {
+    return `${new Date().getFullYear()}-${String(Number(monthOnly[1])).padStart(2, '0')}`;
+  }
+
+  const compact = name.match(/(20\d{2})(0[1-9]|1[0-2])/);
+  if (compact) return `${compact[1]}-${compact[2]}`;
+  return '';
+}
+
 function parseExcelDate(val: any): string {
   if (!val) {
     return '';
@@ -81,6 +101,7 @@ export interface ParseResult {
 }
 
 export async function parseDonationExcel(file: File): Promise<ParseResult> {
+  const inferredPeriod = inferPeriodFromFileName(file.name);
   const buffer = await file.arrayBuffer();
   const workbook = XLSX.read(buffer, { type: 'array', cellDates: false });
   
@@ -123,16 +144,15 @@ export async function parseDonationExcel(file: File): Promise<ParseResult> {
   }
 
   if (headerRowIndex === -1 || maxMatchedCount === 0) {
-    throw new Error('엑셀 열 이름을 인식할 수 없습니다. 성명, 후원일자, 후원금액 열이 포함되어 있는지 확인해주세요.');
+    throw new Error('엑셀 열 이름을 인식할 수 없습니다. 최소한 성명과 후원금액 열이 포함되어 있는지 확인해주세요.');
   }
 
-  // 필수 열은 성명/후원일자/후원금액만 사용합니다.
-  // 주민/사업자번호, 주소, 후원방법, 기부금유형, 기부금코드, 기부내용은 선택 항목입니다.
-  // 특히 기부금유형/기부금코드는 엑셀에서 열 자체가 없거나 값이 비어 있어도 업로드할 수 있어야 합니다.
+  // 필수 데이터는 성명/후원금액만 사용합니다.
+  // 주민/사업자번호, 주소, 후원일자, 후원방법, 기부금유형, 기부금코드, 기부내용은 선택 항목입니다.
+  // 후원일자가 없으면 파일명에서 YYYY년 M월 / YYYY-MM / YYYYMM 형식의 월을 추정해 period로 저장합니다.
   const mappedFields = Object.values(bestHeaderMap);
   const missingRequired: string[] = [];
   if (!mappedFields.includes('donorName')) missingRequired.push('성명 (이름/후원자명)');
-  if (!mappedFields.includes('date')) missingRequired.push('후원일자 (후원일/납부일/기부일)');
   if (!mappedFields.includes('amount')) missingRequired.push('후원금액 (후원금액/금액)');
   if (missingRequired.length > 0) {
     throw new Error(`필수 열이 없습니다: ${missingRequired.join(', ')}`);
@@ -148,6 +168,7 @@ export async function parseDonationExcel(file: File): Promise<ParseResult> {
       id: `rec-${Date.now()}-${r}-${Math.random().toString(36).substring(2, 6)}`,
       paymentMethod: '',
       content: '',
+      period: inferredPeriod || undefined,
       // donationType / donationCode는 선택 항목입니다.
       // 값이 비어 있으면 undefined로 유지하여 영수증 발급 시 단체 기본값을 사용할 수 있게 합니다.
     };
@@ -184,11 +205,14 @@ export async function parseDonationExcel(file: File): Promise<ParseResult> {
       }
     });
 
+    // 날짜가 비어 있어도 성명 + 금액이 있으면 업로드합니다.
+    // 월별 파일명(예: 2026년 8월.xlsx)에서 기간을 찾았다면 period에 저장합니다.
+    // 실제 후원일자가 입력된 경우에는 기존 날짜를 그대로 보존합니다.
+    const validDate = !recordObj.date || /^\d{4}-\d{2}-\d{2}$/.test(recordObj.date);
     if (
       hasData &&
       recordObj.donorName &&
-      recordObj.date &&
-      /^\d{4}-\d{2}-\d{2}$/.test(recordObj.date) &&
+      validDate &&
       recordObj.amount !== undefined &&
       recordObj.amount > 0
     ) {

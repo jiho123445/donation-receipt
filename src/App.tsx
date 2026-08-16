@@ -39,7 +39,6 @@ import {
   loadCloudReceipts,
   loadCloudDonations,
   batchSaveCloudDonations,
-  deleteCloudDonationsByMonth,
   saveCloudOrganization,
   saveCloudReceipt,
   cancelCloudReceipt,
@@ -164,20 +163,6 @@ export default function App() {
       added: added.length,
       duplicates,
     };
-  };
-
-  // Delete one month only. Other months remain untouched.
-  const handleDeleteDonationsByMonth = async (year: number, month: number) => {
-    const monthKey = `${year}-${String(month).padStart(2, '0')}`;
-    const remaining = donations.filter((d) => !String(d.date || '').startsWith(`${monthKey}-`));
-    const localDeleted = donations.length - remaining.length;
-
-    if (firebaseConfigured && auth?.currentUser) {
-      await deleteCloudDonationsByMonth(year, month);
-    }
-
-    setDonations(remaining);
-    return localDeleted;
   };
 
   // Clear Donations Handler (Privacy reset)
@@ -364,7 +349,7 @@ export default function App() {
             donations={donations}
             onUpdateDonations={handleUpdateDonations}
             onClearDonations={handleClearDonations}
-            onDeleteDonationsByMonth={handleDeleteDonationsByMonth}
+            onLoadSample={() => setDonations(INITIAL_SAMPLE_DONATIONS)}
           />
         )}
       </main>

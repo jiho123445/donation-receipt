@@ -14,7 +14,7 @@ export function getDonationFingerprint(record: RawDonationRecord): string {
   return [
     record.donorName,
     identity,
-    record.date,
+    record.date || record.period || '',
     Math.round(record.amount || 0),
     record.paymentMethod || '',
     record.content || '',

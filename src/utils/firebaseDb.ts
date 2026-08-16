@@ -3,7 +3,6 @@ import {
   doc,
   getDoc,
   getDocs,
-  deleteDoc,
   setDoc,
   updateDoc,
   writeBatch,
@@ -155,25 +154,6 @@ export async function batchSaveCloudDonations(donations: RawDonationRecord[]): P
     });
     await batch.commit();
   }
-}
-
-
-/** 특정 연/월의 납부내역만 삭제합니다. (관리자 월별 데이터 정리용) */
-export async function deleteCloudDonationsByMonth(year: number, month: number): Promise<number> {
-  const firestore = requireDb();
-  const snap = await getDocs(collection(firestore, 'donations'));
-  const targets = snap.docs.filter((d) => {
-    const data = d.data() as Partial<RawDonationRecord>;
-    const date = String(data.date || '');
-    return date.startsWith(`${year}-${String(month).padStart(2, '0')}-`);
-  });
-
-  for (let i = 0; i < targets.length; i += 400) {
-    const batch = writeBatch(firestore);
-    targets.slice(i, i + 400).forEach((d) => batch.delete(d.ref));
-    await batch.commit();
-  }
-  return targets.length;
 }
 
 /* ==========================================================================
