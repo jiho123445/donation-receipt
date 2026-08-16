@@ -207,6 +207,8 @@ export const OrgSettingsModal: React.FC<OrgSettingsModalProps> = ({
               />
             </div>
 
+            <div><label className="block text-xs font-bold text-blue-900 mb-1">기부금단체 근거법령 코드 <span className="text-[11px] font-normal text-slate-500">기부금 코드와 별도</span></label><input type="text" placeholder="공식 지정정보를 확인해 입력" value={formData.legalBasisCode || ''} onChange={(e)=>handleChange('legalBasisCode',e.target.value)} className="w-full px-3 py-2 text-sm border border-blue-300 bg-blue-50/40 rounded-md font-mono" /></div>
+
             {/* 기부금단체 지정 관련 정보 */}
             <div className="md:col-span-2">
               <label className="block text-xs font-bold text-blue-900 mb-1">

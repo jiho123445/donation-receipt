@@ -184,7 +184,8 @@ export const DonorSearch: React.FC<DonorSearchProps> = ({
       : /^\d{13}$/.test(compact)
         ? `${compact.slice(0, 6)}-${compact.slice(6)}`
         : raw;
-    return business ? `사업자등록번호: ${formatted}` : `주민등록번호: ${formatted}`;
+    const masked = business && /^\d{10}$/.test(compact) ? `${compact.slice(0,3)}-${compact.slice(3,5)}-*****` : /^\d{13}$/.test(compact) ? `${compact.slice(0,6)}-*******` : formatted;
+    return business ? `사업자등록번호: ${masked}` : `주민등록번호: ${masked}`;
   };
 
   // Handle Search Submission

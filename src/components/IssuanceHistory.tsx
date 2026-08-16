@@ -2,7 +2,7 @@ import React, { useState, useMemo } from 'react';
 import { FileText, Search, Printer, Download, Ban, Eye, CheckCircle, AlertCircle, Calendar, RotateCcw } from 'lucide-react';
 import { IssuedReceiptRecord } from '../types/donation';
 import { formatKRW } from '../utils/hangulCurrency';
-import { exportIssuedReceiptsToExcel } from '../utils/excelParser';
+import { exportIssuedReceiptsToExcel, exportHomeTaxDonationPreparationExcel } from '../utils/excelParser';
 
 interface IssuanceHistoryProps {
   receipts: IssuedReceiptRecord[];
@@ -144,6 +144,7 @@ export const IssuanceHistory: React.FC<IssuanceHistoryProps> = ({
               <Download className="w-4 h-4" />
               <span>대장 다운로드</span>
             </button>
+            <button onClick={() => { const r=receipts.find(x=>x.status==='issued'); if(r) exportHomeTaxDonationPreparationExcel(Array.from(new Map(receipts.filter(x=>x.status==='issued').flatMap(x=>x.donations).map((d,i)=>[d.id||`${d.donorName}-${d.date}-${d.amount}-${i}`,d])).values()), {name:r.orgSnapshot.name,registrationNo:r.orgSnapshot.registrationNo,bizNo:r.orgSnapshot.bizNo}); }} disabled={receipts.length===0} className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-bold text-white bg-emerald-700 rounded-lg"><Download className="w-4 h-4" /><span>홈택스 준비자료</span></button>
             <button
               onClick={isViewCleared ? handleRestoreAll : handleResetView}
               className={`inline-flex items-center gap-1.5 px-3 py-2 text-xs font-bold rounded-lg shadow-xs transition-colors cursor-pointer ${
@@ -265,6 +266,8 @@ export const IssuanceHistory: React.FC<IssuanceHistoryProps> = ({
                           <CheckCircle className="w-3 h-3" />
                           <span>정상발급</span>
                         </span>
+                      ) : r.status === 'reissued' ? (
+                        <span className="inline-flex items-center gap-1 text-[11px] font-bold text-orange-700 bg-orange-50 px-2 py-0.5 rounded-full border border-orange-200"><RotateCcw className="w-3 h-3" /><span>정정·재발급</span></span>
                       ) : (
                         <span className="inline-flex items-center gap-1 text-[11px] font-bold text-red-700 bg-red-50 px-2 py-0.5 rounded-full border border-red-200">
                           <Ban className="w-3 h-3" />

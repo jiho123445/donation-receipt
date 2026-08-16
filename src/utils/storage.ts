@@ -16,6 +16,7 @@ export const DEFAULT_ORG_INFO: OrganizationInfo = {
   donationType: '지정기부금 (공익법인)',
   donationCode: '40',
   defaultContent: '후원금',
+  legalBasisCode: '',
 };
 
 export const DEFAULT_PRINT_SETTINGS: PrintSettings = {
@@ -35,6 +36,7 @@ export function getOrganizationInfo(): OrganizationInfo {
       designationInfo: parsed.designationInfo || DEFAULT_ORG_INFO.designationInfo,
       donationType: parsed.donationType || DEFAULT_ORG_INFO.donationType,
       donationCode: parsed.donationCode || DEFAULT_ORG_INFO.donationCode,
+      legalBasisCode: parsed.legalBasisCode || '',
     };
   } catch {
     return DEFAULT_ORG_INFO;
@@ -73,6 +75,12 @@ export function saveIssuedReceipt(receipt: IssuedReceiptRecord): void {
   const list = getIssuedReceipts();
   const updated = [receipt, ...list.filter((r) => r.receiptNo !== receipt.receiptNo)];
   localStorage.setItem(RECEIPTS_STORAGE_KEY, JSON.stringify(updated));
+}
+
+export function reissueIssuedReceipt(originalReceiptNo: string, newReceipt: IssuedReceiptRecord, reason: string): void {
+  const list = getIssuedReceipts();
+  const updated = list.map((r) => r.receiptNo === originalReceiptNo ? { ...r, status: 'reissued' as const, reissueReason: reason, reissuedTo: newReceipt.receiptNo } : r);
+  localStorage.setItem(RECEIPTS_STORAGE_KEY, JSON.stringify([newReceipt, ...updated.filter((r) => r.receiptNo !== newReceipt.receiptNo)]));
 }
 
 export function cancelIssuedReceipt(receiptNo: string): void {

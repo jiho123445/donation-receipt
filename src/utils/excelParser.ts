@@ -246,6 +246,7 @@ export async function parseDonationExcel(file: File): Promise<ParseResult> {
 
     const recordObj: Partial<RawDonationRecord> = {
       id: `rec-${Date.now()}-${r}-${Math.random().toString(36).substring(2, 6)}`,
+      sourceKey: `${file.name}#${r}`,
       paymentMethod: '',
       content: '',
       period: inferredPeriod || undefined,
@@ -327,6 +328,7 @@ export async function parseDonationExcel(file: File): Promise<ParseResult> {
 
         records.push({
           id: `rec-${Date.now()}-${r}-${Math.random().toString(36).substring(2, 6)}`,
+          sourceKey: `${file.name}#${r}`,
           donorName,
           idNumber: '',
           address: '',
@@ -350,6 +352,7 @@ export async function parseDonationExcel(file: File): Promise<ParseResult> {
       if (!donorName || amount <= 0) continue;
       records.push({
         id: `rec-${Date.now()}-${r}-${Math.random().toString(36).substring(2, 6)}`,
+        sourceKey: `${file.name}#${r}`,
         donorName,
         idNumber: String(row[1] ?? '').trim(),
         address: String(row[2] ?? '').trim(),
@@ -442,7 +445,9 @@ export function exportIssuedReceiptsToExcel(receipts: IssuedReceiptRecord[]) {
     '기부금단체',
     '대표자',
     '고유번호/사업자번호',
-    '기부코드'
+    '기부코드',
+    '원본영수증번호',
+    '재발급/정정사유'
   ];
 
   const rows = receipts.map((r) => [
@@ -456,11 +461,13 @@ export function exportIssuedReceiptsToExcel(receipts: IssuedReceiptRecord[]) {
     r.totalAmount,
     r.amountInKorean,
     r.donations.length,
-    r.status === 'issued' ? '정상발급' : '발급취소',
+    r.status === 'issued' ? '정상발급' : r.status === 'reissued' ? '정정·재발급' : '발급취소',
     r.orgSnapshot.name,
     r.orgSnapshot.representative,
     r.orgSnapshot.registrationNo || r.orgSnapshot.bizNo || '-',
-    r.orgSnapshot.donationCode || '-'
+    r.orgSnapshot.donationCode || '-',
+    r.reissueOf || '',
+    r.reissueReason || ''
   ]);
 
   const ws = XLSX.utils.aoa_to_sheet([headers, ...rows]);
@@ -485,4 +492,10 @@ export function exportIssuedReceiptsToExcel(receipts: IssuedReceiptRecord[]) {
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, '기부금영수증발급대장');
   XLSX.writeFile(wb, `너브내행복나눔재단_기부금영수증_발급대장_${new Date().toISOString().split('T')[0]}.xlsx`);
+}
+
+export function exportHomeTaxDonationPreparationExcel(donations: RawDonationRecord[], orgInfo?: {name:string;registrationNo:string;bizNo:string}) {
+ const headers=['기부자 성명(법인명)','주민등록번호/사업자등록번호','주소(소재지)','기부일자','기부금액(원)','기부금 코드','기부금 유형','기부내용','후원방법','기부금단체명','기부금단체 고유번호/사업자등록번호'];
+ const rows=donations.map(d=>[d.donorName,d.idNumber||'',d.address||'',d.date||'',d.amount,d.donationCode||'',d.donationType||'',d.content||'후원금',d.paymentMethod||'',orgInfo?.name||'',orgInfo?.registrationNo||orgInfo?.bizNo||'']);
+ const ws=XLSX.utils.aoa_to_sheet([headers,...rows]); const wb=XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb,ws,'홈택스_일괄발급_준비자료'); XLSX.writeFile(wb,`너브내행복나눔재단_홈택스_전자기부금영수증_준비자료_${new Date().toISOString().slice(0,10)}.xlsx`);
 }
