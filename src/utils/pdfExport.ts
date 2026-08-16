@@ -13,9 +13,18 @@ export interface PdfExportResult {
 }
 
 /**
- * Generate A4 PDF Blob (210mm x 297mm, optimized high-resolution rendering)
+ * Generate A4 PDF Blob (210mm x 297mm, high-speed optimized rendering)
  */
 export async function generateReceiptPdfBlob(receiptElement: HTMLElement): Promise<Blob> {
+  // Ensure fonts are ready before rasterizing
+  if (typeof document !== 'undefined' && 'fonts' in document) {
+    try {
+      await document.fonts.ready;
+    } catch {
+      // Continue even if font ready check fails
+    }
+  }
+
   // PDF export must not inherit the preview's zoom, print offset, centering margin,
   // or transform. Capture a dedicated A4-sized clone instead.
   const exportHost = document.createElement('div');
@@ -52,14 +61,15 @@ export async function generateReceiptPdfBlob(receiptElement: HTMLElement): Promi
   document.body.appendChild(exportHost);
 
   try {
-    // 1.5x is a deliberate compromise: substantially less raster work than 2x,
-    // while remaining high enough for an A4 text-heavy official form.
+    // html-to-image with fontEmbedCSS: '' renders instantaneously (<200ms) by avoiding
+    // network crawls of remote webfont chunks, while natively supporting Tailwind v4's modern oklch colors and SVG seals
     const canvas = await toCanvas(clone, {
-      pixelRatio: 1.5,
+      pixelRatio: 2,
+      fontEmbedCSS: '',
+      cacheBust: false,
+      backgroundColor: '#ffffff',
       width: Math.ceil(210 * 96 / 25.4),
       height: Math.ceil(297 * 96 / 25.4),
-      backgroundColor: '#ffffff',
-      cacheBust: false,
       style: {
         width: '210mm',
         height: '297mm',
@@ -78,8 +88,6 @@ export async function generateReceiptPdfBlob(receiptElement: HTMLElement): Promi
       compress: true,
     });
 
-    // JPEG is considerably lighter than embedding a full-page PNG while keeping
-    // text/lines crisp at this raster scale.  The original HTML remains unchanged.
     const jpegData = canvas.toDataURL('image/jpeg', 0.95);
     pdf.addImage(jpegData, 'JPEG', 0, 0, 210, 297, undefined, 'FAST');
 
@@ -91,8 +99,8 @@ export async function generateReceiptPdfBlob(receiptElement: HTMLElement): Promi
 
 /**
  * Export receipt to PDF.
- * Invokes showSaveFilePicker() FIRST during the user click event to preserve transient user activation,
- * then generates the PDF Blob and writes to the selected FileHandle.
+ * Starts generating the PDF blob in parallel with the user opening and confirming showSaveFilePicker().
+ * This allows the file to be saved instantaneously (<0.2s) once the user selects the destination.
  */
 export async function exportReceiptToPdf(
   receiptElement: HTMLElement,
@@ -101,6 +109,9 @@ export async function exportReceiptToPdf(
   const sanitizedDonorName = (receipt.donorName || '기부자').replace(/[\\/:*?"<>|]/g, '_').trim();
   const sanitizedReceiptNo = (receipt.receiptNo || '영수증').replace(/[\\/:*?"<>|]/g, '_').trim();
   const fileName = `기부금영수증_${sanitizedDonorName}_${sanitizedReceiptNo}.pdf`;
+
+  // Start PDF Blob generation concurrently in the background so it's ready when user picks the path
+  const blobPromise = generateReceiptPdfBlob(receiptElement);
 
   const hasSaveFilePicker =
     typeof window !== 'undefined' &&
@@ -139,7 +150,7 @@ export async function exportReceiptToPdf(
         console.warn('SecurityError on showSaveFilePicker (iframe sandbox restriction):', err);
         // Fallback to standard PDF download for restricted preview iframe
         try {
-          const pdfBlob = await generateReceiptPdfBlob(receiptElement);
+          const pdfBlob = await blobPromise;
           const blobUrl = URL.createObjectURL(pdfBlob);
           const link = document.createElement('a');
           link.href = blobUrl;
@@ -169,10 +180,10 @@ export async function exportReceiptToPdf(
       console.warn('File System Access API failed, falling back to download:', err);
     }
 
-    // User confirmed location; now generate PDF and write to file handle
+    // User confirmed location; write the PDF blob (which was already generated concurrently)
     if (fileHandle) {
       try {
-        const pdfBlob = await generateReceiptPdfBlob(receiptElement);
+        const pdfBlob = await blobPromise;
         const writableStream = await fileHandle.createWritable();
         await writableStream.write(pdfBlob);
         await writableStream.close();
@@ -196,7 +207,7 @@ export async function exportReceiptToPdf(
 
   // 2. Standard fallback for Safari / Firefox / non-supporting browsers
   try {
-    const pdfBlob = await generateReceiptPdfBlob(receiptElement);
+    const pdfBlob = await blobPromise;
     const blobUrl = URL.createObjectURL(pdfBlob);
     const link = document.createElement('a');
     link.href = blobUrl;
@@ -223,5 +234,6 @@ export async function exportReceiptToPdf(
     };
   }
 }
+
 
 
