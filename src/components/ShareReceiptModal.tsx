@@ -215,13 +215,15 @@ ${orgName} 배상`;
       const pdfData = await getOrGeneratePdfData();
       if (!pdfData) throw new Error('영수증 PDF를 생성할 요소를 찾을 수 없습니다.');
 
-      const downloadUrl = await uploadReceiptPdfAndGetUrl(pdfData.blob, pdfData.fileName);
+      const { shortId } = await uploadReceiptPdfAndGetUrl(pdfData.blob, pdfData.fileName, receipt.receiptNo);
 
-      // 카카오톡 PC(데스크톱) 클라이언트는 등록되지 않은 외부 도메인(예: Firebase
-      // Storage) 링크를 바로 열지 못하고 "모바일에서 확인해주세요"만 표시합니다.
-      // 이를 피하기 위해 실제 배포 도메인(우리 앱)의 리다이렉트 페이지를 경유해
-      // 최종적으로 PDF로 이동시킵니다.
-      const redirectUrl = `${window.location.origin}/receipt-redirect.html?u=${encodeURIComponent(downloadUrl)}`;
+      // 카카오톡 공유 링크는 너무 길면(대략 250자 이상) 무효 처리되어 눌러도
+      // 반응이 없습니다. Firebase Storage 원본 다운로드 URL은 토큰 + 한글
+      // 파일명 인코딩까지 겹치면 300~400자를 넘기므로, 발급번호 기반의 아주
+      // 짧은 서버 리다이렉트 링크(/api/r?id=발급번호)를 대신 사용합니다.
+      // 이 링크는 우리 앱 도메인이라 PC 카카오톡의 "외부 도메인 미확인" 제약도
+      // 함께 피할 수 있습니다.
+      const redirectUrl = `${window.location.origin}/api/r?id=${encodeURIComponent(shortId)}`;
 
       // 카카오톡 "텍스트" 공유 템플릿은 본문 글자 수 제한(약 200자)이 있어서,
       // 상세 안내문(수백 자)을 그대로 보내면 카카오톡이 정상 카드/버튼 대신
