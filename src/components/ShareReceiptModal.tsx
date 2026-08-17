@@ -217,12 +217,18 @@ ${orgName} 배상`;
 
       const downloadUrl = await uploadReceiptPdfAndGetUrl(pdfData.blob, pdfData.fileName);
 
+      // 카카오톡 PC(데스크톱) 클라이언트는 등록되지 않은 외부 도메인(예: Firebase
+      // Storage) 링크를 바로 열지 못하고 "모바일에서 확인해주세요"만 표시합니다.
+      // 이를 피하기 위해 실제 배포 도메인(우리 앱)의 리다이렉트 페이지를 경유해
+      // 최종적으로 PDF로 이동시킵니다.
+      const redirectUrl = `${window.location.origin}/receipt-redirect.html?u=${encodeURIComponent(downloadUrl)}`;
+
       const summaryText =
         kakaoMessage.length > 700 ? `${kakaoMessage.slice(0, 700)}…\n\n(하단 버튼에서 전체 PDF 확인)` : kakaoMessage;
 
       await shareViaKakao({
         text: summaryText,
-        linkUrl: downloadUrl,
+        linkUrl: redirectUrl,
         buttonTitle: '기부금영수증 PDF 확인',
       });
 
