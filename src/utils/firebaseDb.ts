@@ -179,6 +179,29 @@ export async function batchSaveCloudDonations(donations: RawDonationRecord[]): P
   }
 }
 
+/**
+ * 관리자용 후원내역 전체 초기화.
+ * donations 컬렉션의 모든 문서를 삭제하며 donors/receipts/issuedReceipts 등
+ * 다른 컬렉션은 건드리지 않습니다. Firestore의 500개 배치 제한을 고려해
+ * 400개 단위로 나누어 삭제합니다.
+ */
+export async function deleteAllCloudDonations(): Promise<number> {
+  const firestore = requireDb();
+  const snap = await getDocs(collection(firestore, 'donations'));
+  if (snap.empty) return 0;
+
+  let deleted = 0;
+  const docs = snap.docs;
+  for (let i = 0; i < docs.length; i += 400) {
+    const chunk = docs.slice(i, i + 400);
+    const batch = writeBatch(firestore);
+    chunk.forEach((d) => batch.delete(d.ref));
+    await batch.commit();
+    deleted += chunk.length;
+  }
+  return deleted;
+}
+
 /* ==========================================================================
    3. receipts 컬렉션: 발급된 기부금영수증 기록
    ========================================================================== */

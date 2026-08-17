@@ -39,6 +39,7 @@ import {
   loadCloudReceipts,
   loadCloudDonations,
   batchSaveCloudDonations,
+  deleteAllCloudDonations,
   saveCloudOrganization,
   saveCloudReceipt,
   cancelCloudReceipt,
@@ -192,12 +193,21 @@ export default function App() {
   };
 
   // Clear Donations Handler
-  // 화면/브라우저 메모리만 비웁니다. Firebase의 누적 후원자료는 절대로 삭제하지 않습니다.
-  // 이후 Excel을 다시 업로드하면 handleUpdateDonations가 Firebase 최신자료를 다시 읽어
-  // 누적/중복검사를 수행합니다.
-  const handleClearDonations = () => {
+  // '회원 명단 초기화'는 화면만 비우는 것이 아니라, 로그인된 Firebase 환경에서는
+  // donations 컬렉션 전체를 실제로 삭제합니다. 다른 컬렉션(donors, receipts,
+  // issuedReceipts, organizations, counters)은 절대 삭제하지 않습니다.
+  const handleClearDonations = async (): Promise<{ deleted: number }> => {
+    if (firebaseConfigured && auth?.currentUser) {
+      const deleted = await deleteAllCloudDonations();
+      // 클라우드 삭제가 성공한 뒤에만 화면/로컬 상태를 비웁니다.
+      setDonations([]);
+      clearActiveDonations();
+      return { deleted };
+    }
+
     setDonations([]);
     clearActiveDonations();
+    return { deleted: 0 };
   };
 
   // Save Org Info
