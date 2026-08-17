@@ -223,11 +223,16 @@ ${orgName} 배상`;
       // 최종적으로 PDF로 이동시킵니다.
       const redirectUrl = `${window.location.origin}/receipt-redirect.html?u=${encodeURIComponent(downloadUrl)}`;
 
-      const summaryText =
-        kakaoMessage.length > 700 ? `${kakaoMessage.slice(0, 700)}…\n\n(하단 버튼에서 전체 PDF 확인)` : kakaoMessage;
+      // 카카오톡 "텍스트" 공유 템플릿은 본문 글자 수 제한(약 200자)이 있어서,
+      // 상세 안내문(수백 자)을 그대로 보내면 카카오톡이 정상 카드/버튼 대신
+      // 깨진(비어있는 듯한) "모바일에서 확인해주세요" 화면만 표시하고 링크도
+      // 눌리지 않는 문제가 있었습니다. 상세 내용은 PDF/버튼 링크에 담고,
+      // 본문은 짧은 요약 문구로 대체합니다.
+      const orgName = receipt.orgSnapshot?.name || '사단법인 너브내행복나눔재단';
+      const shortSummaryText = `[${orgName}] ${targetName || receipt.donorName}님, ${receipt.taxYear}년도 기부금영수증(발급번호 ${receipt.receiptNo})이 발급되었습니다. 아래 버튼을 눌러 PDF를 확인해주세요.`;
 
       await shareViaKakao({
-        text: summaryText,
+        text: shortSummaryText,
         linkUrl: redirectUrl,
         buttonTitle: '기부금영수증 PDF 확인',
       });
