@@ -1,13 +1,23 @@
 import React, { useState, useRef } from 'react';
-import { Upload, FileSpreadsheet, Download, RefreshCw, Trash2, CheckCircle2, AlertCircle, ShieldCheck, Database, FileText } from 'lucide-react';
+import { Upload, FileSpreadsheet, Download, RefreshCw, Trash2, CheckCircle2, AlertCircle, AlertTriangle, ShieldCheck, Database, FileText } from 'lucide-react';
 import { RawDonationRecord } from '../types/donation';
 import { parseDonationExcel, downloadSampleExcelTemplate, ParseResult } from '../utils/excelParser';
+import type { ImportedFileRecord } from '../utils/firebaseDb';
+
+interface ParsedFile {
+  file: File;
+  result: ParseResult;
+}
 
 interface ExcelManagerProps {
   donations: RawDonationRecord[];
   onUpdateDonations: (records: RawDonationRecord[]) => Promise<{ total: number; added: number; duplicates: number }>;
   onClearDonations: () => Promise<{ deleted: number }>;
   onLoadSample: () => void;
+  /** 파일 해시로 "이미 가져온 파일인지" 확인합니다. Firebase 미연결 시 항상 null을 반환합니다. */
+  onCheckFileImported: (fileHash: string) => Promise<ImportedFileRecord | null>;
+  /** 업로드 성공 후 "이 파일을 가져왔다"는 기록을 남깁니다. */
+  onRecordFileImport: (fileHash: string, fileName: string, rowCount: number) => Promise<void>;
 }
 
 export const ExcelManager: React.FC<ExcelManagerProps> = ({
@@ -15,6 +25,8 @@ export const ExcelManager: React.FC<ExcelManagerProps> = ({
   onUpdateDonations,
   onClearDonations,
   onLoadSample,
+  onCheckFileImported,
+  onRecordFileImport,
 }) => {
   const [isDragging, setIsDragging] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
@@ -24,7 +36,56 @@ export const ExcelManager: React.FC<ExcelManagerProps> = ({
   const [lastSaveResult, setLastSaveResult] = useState<{ total: number; added: number; duplicates: number } | null>(null);
   const [showClearConfirm, setShowClearConfirm] = useState(false);
   const [isClearing, setIsClearing] = useState(false);
+  const [pendingReimport, setPendingReimport] = useState<{
+    parsedFiles: ParsedFile[];
+    alreadyImported: { fileName: string; previous: ImportedFileRecord }[];
+  } | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // 파싱된 파일들을 실제로 저장까지 진행합니다. (재업로드 확인을 통과했거나, 처음 올리는 경우)
+  const commitParsedFiles = async (parsedFiles: ParsedFile[], errors: string[]) => {
+    const allRecords: RawDonationRecord[] = [];
+    const allMappings: Record<string, string> = {};
+    let totalRows = 0;
+
+    for (const { file, result } of parsedFiles) {
+      allRecords.push(...result.records);
+      totalRows += result.records.length;
+      Object.entries(result.columnMapping).forEach(([k, v]) => {
+        allMappings[`${file.name} - ${k}`] = v;
+      });
+    }
+
+    if (allRecords.length === 0) {
+      throw new Error(errors.length ? errors.join(' / ') : '유효한 후원 데이터가 발견되지 않았습니다. 성명과 후원금액이 있는 행인지 확인해주세요.');
+    }
+
+    const saveResult = await onUpdateDonations(allRecords);
+    setLastSaveResult(saveResult);
+    setLastParseResult({
+      records: allRecords,
+      columnMapping: allMappings,
+      missingRequired: [],
+      totalRows,
+      fileHash: '',
+      fileName: '',
+    });
+
+    // 저장이 끝난 뒤에만 "이 파일을 가져왔다"고 기록합니다. (저장 실패 시 기록하지 않음)
+    for (const { file, result } of parsedFiles) {
+      try {
+        await onRecordFileImport(result.fileHash, file.name, result.records.length);
+      } catch (e) {
+        console.error('파일 가져오기 이력 저장 실패:', e);
+      }
+    }
+
+    const skippedText = errors.length > 0 ? ` / 확인 필요 ${errors.length}개 파일` : '';
+    setSuccessMessage(
+      `${parsedFiles.length}개 파일 분석 ${allRecords.length.toLocaleString()}건 → 신규 ${saveResult.added.toLocaleString()}건 추가 → 최종 누적 ${saveResult.total.toLocaleString()}건${skippedText}`
+    );
+    if (errors.length > 0) setErrorMessage(errors.join(' / '));
+  };
 
   const handleFiles = async (files: FileList | File[]) => {
     const selectedFiles = Array.from(files).filter((file) => /\.(xlsx|xls)$/i.test(file.name));
@@ -38,12 +99,11 @@ export const ExcelManager: React.FC<ExcelManagerProps> = ({
     setSuccessMessage(null);
     setLastParseResult(null);
     setLastSaveResult(null);
+    setPendingReimport(null);
 
     try {
-      const allRecords: RawDonationRecord[] = [];
-      const allMappings: Record<string, string> = {};
+      const parsedFiles: ParsedFile[] = [];
       const errors: string[] = [];
-      let totalRows = 0;
 
       for (const file of selectedFiles) {
         try {
@@ -56,34 +116,32 @@ export const ExcelManager: React.FC<ExcelManagerProps> = ({
             errors.push(`${file.name}: 성명과 후원금액이 있는 유효한 행이 없습니다.`);
             continue;
           }
-          allRecords.push(...result.records);
-          totalRows += result.records.length;
-          Object.entries(result.columnMapping).forEach(([k, v]) => {
-            allMappings[`${file.name} - ${k}`] = v;
-          });
+          parsedFiles.push({ file, result });
         } catch (fileError: any) {
           errors.push(`${file.name}: ${fileError?.message || '분석 실패'}`);
         }
       }
 
-      if (allRecords.length === 0) {
+      if (parsedFiles.length === 0) {
         throw new Error(errors.length ? errors.join(' / ') : '유효한 후원 데이터가 발견되지 않았습니다. 성명과 후원금액이 있는 행인지 확인해주세요.');
       }
 
-      const saveResult = await onUpdateDonations(allRecords);
-      setLastSaveResult(saveResult);
-      setLastParseResult({
-        records: allRecords,
-        columnMapping: allMappings,
-        missingRequired: [],
-        totalRows,
-      });
-
-      const skippedText = errors.length > 0 ? ` / 확인 필요 ${errors.length}개 파일` : '';
-      setSuccessMessage(
-        `${selectedFiles.length}개 파일 분석 ${allRecords.length.toLocaleString()}건 → 신규 ${saveResult.added.toLocaleString()}건 추가 → 중복 ${saveResult.duplicates.toLocaleString()}건 제외 → 최종 누적 ${saveResult.total.toLocaleString()}건${skippedText}`
+      // 파일 전체 내용을 기준으로 "이미 가져온 적 있는 파일인지" 확인합니다.
+      // (행 단위 내용 추측이 아니라, 파일 해시로 확인하는 명확한 사실 확인입니다.)
+      const checks = await Promise.all(
+        parsedFiles.map(async (pf) => ({ pf, previous: await onCheckFileImported(pf.result.fileHash) }))
       );
-      if (errors.length > 0) setErrorMessage(errors.join(' / '));
+      const alreadyImported = checks
+        .filter((c) => c.previous)
+        .map((c) => ({ fileName: c.pf.file.name, previous: c.previous as ImportedFileRecord }));
+
+      if (alreadyImported.length > 0) {
+        setPendingReimport({ parsedFiles, alreadyImported });
+        setIsProcessing(false);
+        return;
+      }
+
+      await commitParsedFiles(parsedFiles, errors);
     } catch (err: any) {
       setErrorMessage(err.message || '엑셀 파일을 읽는 중 오류가 발생했습니다.');
     } finally {
@@ -321,6 +379,70 @@ export const ExcelManager: React.FC<ExcelManagerProps> = ({
           </div>
         </div>
       </div>
+
+      {/* Already-Imported File Confirmation Modal */}
+      {pendingReimport && (
+        <div className="fixed inset-0 z-50 overflow-y-auto bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white rounded-xl shadow-2xl max-w-lg w-full p-6 border border-slate-200 animate-in fade-in zoom-in-95 duration-150">
+            <div className="w-12 h-12 rounded-full bg-amber-100 text-amber-600 flex items-center justify-center mb-4">
+              <AlertTriangle className="w-6 h-6" />
+            </div>
+            <h3 className="text-base font-bold text-slate-900">
+              이미 가져온 파일이 있습니다
+            </h3>
+            <p className="text-xs text-slate-600 mt-2 leading-relaxed">
+              아래 파일은 이전에 이미 가져와서 저장한 적이 있는 파일과 <strong>내용이 완전히 동일</strong>합니다.
+              그대로 다시 가져오면 같은 후원건이 중복으로 추가될 수 있습니다.
+            </p>
+            <ul className="mt-3 space-y-2">
+              {pendingReimport.alreadyImported.map((item) => (
+                <li key={item.fileName} className="bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 text-xs text-amber-900">
+                  <div className="font-bold">{item.fileName}</div>
+                  <div className="text-[11px] text-amber-700 mt-0.5">
+                    {new Date(item.previous.importedAt).toLocaleString('ko-KR')}에 {item.previous.rowCount.toLocaleString()}건 가져옴
+                  </div>
+                </li>
+              ))}
+            </ul>
+            <p className="text-xs text-slate-500 mt-3">
+              내용을 수정한 새 파일이라면 안심하고 다시 가져오셔도 됩니다(내용이 조금이라도 다르면 이 확인창은 뜨지 않습니다).
+              정말 같은 파일을 다시 가져오시겠습니까?
+            </p>
+
+            <div className="mt-6 flex items-center justify-end gap-3">
+              <button
+                onClick={() => {
+                  setPendingReimport(null);
+                  if (fileInputRef.current) fileInputRef.current.value = '';
+                }}
+                className="px-4 py-2 text-xs font-semibold text-slate-700 bg-slate-100 hover:bg-slate-200 rounded-md cursor-pointer"
+              >
+                취소
+              </button>
+              <button
+                onClick={async () => {
+                  const { parsedFiles } = pendingReimport;
+                  setPendingReimport(null);
+                  setIsProcessing(true);
+                  setErrorMessage(null);
+                  setSuccessMessage(null);
+                  try {
+                    await commitParsedFiles(parsedFiles, []);
+                  } catch (err: any) {
+                    setErrorMessage(err.message || '엑셀 파일을 저장하는 중 오류가 발생했습니다.');
+                  } finally {
+                    setIsProcessing(false);
+                    if (fileInputRef.current) fileInputRef.current.value = '';
+                  }
+                }}
+                className="px-4 py-2 text-xs font-bold text-white bg-amber-600 hover:bg-amber-700 rounded-md shadow-xs cursor-pointer"
+              >
+                그래도 다시 가져오기
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Clear Confirmation Modal */}
       {showClearConfirm && (

@@ -46,7 +46,10 @@ import {
   getNextCloudReceiptNumber,
   testFirestoreConnection,
   saveCloudDonor,
+  checkFileAlreadyImported,
+  recordFileImport,
   type FirestoreConnectionStatus,
+  type ImportedFileRecord,
 } from './utils/firebaseDb';
 
 export default function App() {
@@ -190,6 +193,17 @@ export default function App() {
       added: added.length,
       duplicates,
     };
+  };
+
+  // 파일 재업로드 확인 (파일 전체 해시 기준)
+  const handleCheckFileImported = async (fileHash: string): Promise<ImportedFileRecord | null> => {
+    if (!firebaseConfigured || !auth?.currentUser) return null;
+    return checkFileAlreadyImported(fileHash);
+  };
+
+  const handleRecordFileImport = async (fileHash: string, fileName: string, rowCount: number): Promise<void> => {
+    if (!firebaseConfigured || !auth?.currentUser) return;
+    await recordFileImport(fileHash, fileName, rowCount);
   };
 
   // Clear Donations Handler
@@ -389,6 +403,8 @@ export default function App() {
             onUpdateDonations={handleUpdateDonations}
             onClearDonations={handleClearDonations}
             onLoadSample={() => setDonations(INITIAL_SAMPLE_DONATIONS)}
+            onCheckFileImported={handleCheckFileImported}
+            onRecordFileImport={handleRecordFileImport}
           />
         )}
       </main>

@@ -141,14 +141,16 @@ function parseExcelAmount(val: any): number {
   return Number.isFinite(fallback) ? Math.round(fallback) : 0;
 }
 
-function makeSourceKey(fileName: string, sheetName: string, rowIndex: number, row: any[]): string {
-  const raw = [fileName, sheetName, String(rowIndex), ...row.map((v) => String(v ?? '').trim())].join('|');
-  let hash = 2166136261;
-  for (let i = 0; i < raw.length; i += 1) {
-    hash ^= raw.charCodeAt(i);
-    hash = Math.imul(hash, 16777619);
-  }
-  return `excelrow_${(hash >>> 0).toString(16).padStart(8, '0')}`;
+/**
+ * 파일 전체 내용을 기준으로 한 SHA-256 해시.
+ * "같은 엑셀 파일을 실수로 두 번 올렸는지" 판단에만 사용합니다.
+ * (행 단위 추측 중복판정에는 사용하지 않습니다 — donationDedup.ts 상단 설명 참고)
+ */
+async function computeFileHash(buffer: ArrayBuffer): Promise<string> {
+  const digest = await crypto.subtle.digest('SHA-256', buffer);
+  return Array.from(new Uint8Array(digest))
+    .map((b) => b.toString(16).padStart(2, '0'))
+    .join('');
 }
 
 export interface ParseResult {
@@ -156,11 +158,14 @@ export interface ParseResult {
   columnMapping: Record<string, string>;
   missingRequired: string[];
   totalRows: number;
+  fileHash: string; // 파일 전체 내용 SHA-256 — 동일 파일 재업로드 확인용
+  fileName: string;
 }
 
 export async function parseDonationExcel(file: File): Promise<ParseResult> {
   const inferredPeriod = inferPeriodFromFileName(file.name);
   const buffer = await file.arrayBuffer();
+  const fileHash = await computeFileHash(buffer);
   const workbook = XLSX.read(buffer, { type: 'array', cellDates: false, cellFormula: true });
   
   if (workbook.SheetNames.length === 0) {
@@ -259,7 +264,7 @@ export async function parseDonationExcel(file: File): Promise<ParseResult> {
       paymentMethod: '',
       content: '',
       period: inferredPeriod || '',
-      sourceKey: makeSourceKey(file.name, workbook.SheetNames[0], r, row),
+      sourceRow: r + 1,
       // donationType / donationCode는 선택 항목입니다.
       // 값이 비어 있으면 undefined로 유지하여 영수증 발급 시 단체 기본값을 사용할 수 있게 합니다.
     };
@@ -343,7 +348,7 @@ export async function parseDonationExcel(file: File): Promise<ParseResult> {
           address: '',
           date: '',
           period: inferredPeriod || '',
-          sourceKey: makeSourceKey(file.name, workbook.SheetNames[0], r, row),
+          sourceRow: r + 1,
           amount,
           paymentMethod: '계좌이체',
           content: '후원금',
@@ -367,7 +372,7 @@ export async function parseDonationExcel(file: File): Promise<ParseResult> {
         address: String(row[2] ?? '').trim(),
         date: parseExcelDate(row[3]),
         period: inferredPeriod || '',
-        sourceKey: makeSourceKey(file.name, workbook.SheetNames[0], r, row),
+        sourceRow: r + 1,
         amount,
         paymentMethod: String(row[5] ?? '').trim() || '계좌이체',
         donationType: String(row[6] ?? '').trim() || undefined,
@@ -387,6 +392,8 @@ export async function parseDonationExcel(file: File): Promise<ParseResult> {
     columnMapping: columnMappingSummary,
     missingRequired,
     totalRows: records.length,
+    fileHash,
+    fileName: file.name,
   };
 }
 

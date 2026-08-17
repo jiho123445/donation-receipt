@@ -203,6 +203,37 @@ export async function deleteAllCloudDonations(): Promise<number> {
 }
 
 /* ==========================================================================
+   2-1. importedFiles 컬렉션: "같은 파일을 실수로 두 번 올렸는지" 확인용
+   (행 단위 내용 추측 대신, 파일 전체 해시로 명확하게 확인 — donationDedup.ts 참고)
+   ========================================================================== */
+
+export interface ImportedFileRecord {
+  fileName: string;
+  rowCount: number;
+  importedAt: string;
+}
+
+export async function checkFileAlreadyImported(fileHash: string): Promise<ImportedFileRecord | null> {
+  try {
+    const snap = await getDoc(doc(requireDb(), 'importedFiles', fileHash));
+    return snap.exists() ? (snap.data() as ImportedFileRecord) : null;
+  } catch (error) {
+    // 조회 자체가 실패해도 업로드를 막지는 않습니다.
+    // (중복 여부를 몰라서 정상 업로드를 막는 것보다, 안내 없이 통과시키는 편이 안전합니다)
+    console.error('checkFileAlreadyImported error:', error);
+    return null;
+  }
+}
+
+export async function recordFileImport(fileHash: string, fileName: string, rowCount: number): Promise<void> {
+  await setDoc(doc(requireDb(), 'importedFiles', fileHash), {
+    fileName,
+    rowCount,
+    importedAt: new Date().toISOString(),
+  });
+}
+
+/* ==========================================================================
    3. receipts 컬렉션: 발급된 기부금영수증 기록
    ========================================================================== */
 

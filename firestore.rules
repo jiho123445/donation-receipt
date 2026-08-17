@@ -36,6 +36,11 @@ service cloud.firestore {
       allow read, write: if signedIn();
     }
 
+    // 5. 이미 가져온 엑셀 파일 목록 (파일 해시 기준 재업로드 확인용)
+    match /importedFiles/{fileHash} {
+      allow read, write: if signedIn();
+    }
+
     // 기본 차단 규칙
     match /{document=**} {
       allow read, write: if false;
