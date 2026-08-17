@@ -356,11 +356,11 @@ ${orgName} 배상`;
       if (isMobile) {
         window.location.href = `kakaolink://send?text=${encodeURIComponent(kakaoMessage)}`;
       } else {
-        // PC Kakao launch
+        // PC 카카오톡 데스크톱 앱 실행 (설치되어 있으면 앱이 뜹니다).
+        // 예전에는 800ms 후 'https://web.kakao.com/' 을 추가로 열었는데, 이 주소는
+        // 실제로 존재하지 않는 도메인이라 항상 DNS_PROBE_FINISHED_NXDOMAIN 오류 탭이
+        // 떴습니다 (카카오톡 앱 실행 자체와는 무관). 불필요한 오류 탭이 뜨지 않도록 제거했습니다.
         window.open('kakaotalk://', '_self');
-        setTimeout(() => {
-          window.open('https://web.kakao.com/', '_blank', 'noopener,noreferrer');
-        }, 800);
       }
 
       showFeedback(`💬 [${targetName}] 후원자님께 보낼 문구가 복사되고 PDF가 다운로드되었습니다! 카카오톡에서 [${targetName}] 검색 후 대화방에 붙여넣기(Ctrl+V)하세요.`);
