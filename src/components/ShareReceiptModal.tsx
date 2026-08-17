@@ -24,6 +24,8 @@ import { IssuedReceiptRecord } from '../types/donation';
 import { formatKRW } from '../utils/hangulCurrency';
 import { generateReceiptPdfBlob } from '../utils/pdfExport';
 import { OfficialReceiptA4 } from './OfficialReceiptA4';
+import { shareViaKakao, isKakaoConfigured } from '../utils/kakaoShare';
+import { uploadReceiptPdfAndGetUrl } from '../utils/receiptStorage';
 
 interface ShareReceiptModalProps {
   isOpen: boolean;
@@ -58,6 +60,12 @@ export const ShareReceiptModal: React.FC<ShareReceiptModalProps> = ({
   const [isSharing, setIsSharing] = useState(false);
   const [isGeneratingPdf, setIsGeneratingPdf] = useState(false);
   const [shareFeedback, setShareFeedback] = useState<string | null>(null);
+  const [shareFeedbackTone, setShareFeedbackTone] = useState<'success' | 'error'>('success');
+
+  // Real send status
+  const [isKakaoRealSending, setIsKakaoRealSending] = useState(false);
+  const [isEmailRealSending, setIsEmailRealSending] = useState(false);
+  const [emailRealSent, setEmailRealSent] = useState(false);
 
   const internalReceiptRef = useRef<HTMLDivElement>(null);
 
@@ -169,6 +177,114 @@ ${orgName} 배상`;
     return { file, blob, fileName };
   };
 
+  // Unified feedback banner setter — infers success/error tone from message content
+  const showFeedback = (text: string) => {
+    const tone: 'success' | 'error' = /오류|실패/.test(text) ? 'error' : 'success';
+    setShareFeedbackTone(tone);
+    setShareFeedback(text);
+  };
+
+  const blobToBase64 = (blob: Blob): Promise<string> =>
+    new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        const result = reader.result as string;
+        // Strip the "data:application/pdf;base64," prefix
+        resolve(result.split(',')[1] || '');
+      };
+      reader.onerror = reject;
+      reader.readAsDataURL(blob);
+    });
+
+  // ═══ REAL SEND #1: 카카오톡 공유하기 (Kakao Share API) ═══
+  // PDF를 Firebase Storage에 업로드해 다운로드 링크를 만든 뒤,
+  // 카카오 공식 공유하기 레이어를 띄웁니다. 사용자가 대화상대를 선택하면
+  // 실제로 그 채팅방에 메시지(+PDF 다운로드 링크)가 전송됩니다.
+  const handleKakaoRealShare = async () => {
+    if (!isKakaoConfigured()) {
+      showFeedback(
+        '카카오톡 공유하기를 사용하려면 먼저 카카오 JS 키(VITE_KAKAO_JS_KEY)를 설정해야 합니다. .env 파일 설정 후 앱을 다시 시작해주세요. (오류)'
+      );
+      return;
+    }
+
+    setIsKakaoRealSending(true);
+    setShareFeedback(null);
+
+    try {
+      const pdfData = await getOrGeneratePdfData();
+      if (!pdfData) throw new Error('영수증 PDF를 생성할 요소를 찾을 수 없습니다.');
+
+      const downloadUrl = await uploadReceiptPdfAndGetUrl(pdfData.blob, pdfData.fileName);
+
+      const summaryText =
+        kakaoMessage.length > 700 ? `${kakaoMessage.slice(0, 700)}…\n\n(하단 버튼에서 전체 PDF 확인)` : kakaoMessage;
+
+      await shareViaKakao({
+        text: summaryText,
+        linkUrl: downloadUrl,
+        buttonTitle: '기부금영수증 PDF 확인',
+      });
+
+      showFeedback(
+        `카카오톡 공유 창이 열렸습니다. [${targetName}] 대화상대(또는 채팅방)를 선택하면 실제로 메시지가 전송됩니다.`
+      );
+    } catch (err: any) {
+      console.error('Kakao real share error:', err);
+      showFeedback(`카카오톡 공유 중 오류가 발생했습니다: ${err?.message || '알 수 없는 오류'} (오류)`);
+    } finally {
+      setIsKakaoRealSending(false);
+    }
+  };
+
+  // ═══ REAL SEND #2: 이메일 서버 자동 발송 ═══
+  // PDF를 base64로 변환해 백엔드(server/index.js)의 /api/send-email 로 전달하면,
+  // 서버가 nodemailer를 통해 실제 수신자 메일함으로 PDF 첨부 메일을 발송합니다.
+  const handleEmailRealSend = async () => {
+    const to = recipientEmail.trim();
+    if (!to) {
+      showFeedback('받는사람 이메일 주소를 입력해주세요. (오류)');
+      return;
+    }
+
+    setIsEmailRealSending(true);
+    setEmailRealSent(false);
+    setShareFeedback(null);
+
+    try {
+      const pdfData = await getOrGeneratePdfData();
+      if (!pdfData) throw new Error('영수증 PDF를 생성할 요소를 찾을 수 없습니다.');
+
+      const pdfBase64 = await blobToBase64(pdfData.blob);
+
+      const response = await fetch('/api/send-email', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          to,
+          subject: emailSubject,
+          text: emailBody,
+          pdfBase64,
+          fileName: pdfData.fileName,
+        }),
+      });
+
+      const data = await response.json().catch(() => ({ ok: false, error: '서버 응답을 해석할 수 없습니다.' }));
+
+      if (!response.ok || !data.ok) {
+        throw new Error(data.error || `서버 오류 (HTTP ${response.status})`);
+      }
+
+      setEmailRealSent(true);
+      showFeedback(`[${to}] 주소로 기부금영수증 PDF가 첨부된 이메일이 실제로 발송되었습니다!`);
+    } catch (err: any) {
+      console.error('Email real send error:', err);
+      showFeedback(`이메일 발송 실패: ${err?.message || '알 수 없는 오류'}`);
+    } finally {
+      setIsEmailRealSending(false);
+    }
+  };
+
   // Direct PDF Download handler
   const handleDownloadPdf = async () => {
     setIsGeneratingPdf(true);
@@ -186,10 +302,10 @@ ${orgName} 배상`;
       document.body.removeChild(a);
       setTimeout(() => URL.revokeObjectURL(url), 1500);
 
-      setShareFeedback(`📄 PDF 파일 [${pdfData.fileName}]이(가) 다운로드되었습니다.`);
+      showFeedback(`📄 PDF 파일 [${pdfData.fileName}]이(가) 다운로드되었습니다.`);
     } catch (err) {
       console.error('PDF download error:', err);
-      setShareFeedback('PDF 다운로드 중 오류가 발생했습니다.');
+      showFeedback('PDF 다운로드 중 오류가 발생했습니다.');
     } finally {
       setIsGeneratingPdf(false);
     }
@@ -200,10 +316,10 @@ ${orgName} 배상`;
     try {
       await navigator.clipboard.writeText(kakaoMessage);
       setCopiedKakao(true);
-      setShareFeedback('카카오톡 안내 문구가 복사되었습니다. 카카오톡 대화방에 [붙여넣기(Ctrl+V)] 하세요!');
+      showFeedback('카카오톡 안내 문구가 복사되었습니다. 카카오톡 대화방에 [붙여넣기(Ctrl+V)] 하세요!');
       setTimeout(() => setCopiedKakao(false), 3000);
     } catch {
-      setShareFeedback('클립보드 복사에 실패했습니다.');
+      showFeedback('클립보드 복사에 실패했습니다.');
     }
   };
 
@@ -241,10 +357,10 @@ ${orgName} 배상`;
         }, 800);
       }
 
-      setShareFeedback(`💬 [${targetName}] 후원자님께 보낼 문구가 복사되고 PDF가 다운로드되었습니다! 카카오톡에서 [${targetName}] 검색 후 대화방에 붙여넣기(Ctrl+V)하세요.`);
+      showFeedback(`💬 [${targetName}] 후원자님께 보낼 문구가 복사되고 PDF가 다운로드되었습니다! 카카오톡에서 [${targetName}] 검색 후 대화방에 붙여넣기(Ctrl+V)하세요.`);
     } catch (err) {
       console.error('Kakao launch error:', err);
-      setShareFeedback('카카오톡 실행 중 오류가 발생했습니다.');
+      showFeedback('카카오톡 실행 중 오류가 발생했습니다.');
     } finally {
       setIsSharing(false);
     }
@@ -293,7 +409,7 @@ ${orgName} 배상`;
         }
 
         await navigator.share(shareData);
-        setShareFeedback(`선택하신 대화상대(${targetName}님)에게 기부금영수증 PDF와 문구가 전송되었습니다.`);
+        showFeedback(`선택하신 대화상대(${targetName}님)에게 기부금영수증 PDF와 문구가 전송되었습니다.`);
         return;
       }
 
@@ -308,7 +424,7 @@ ${orgName} 배상`;
         document.body.removeChild(a);
         setTimeout(() => URL.revokeObjectURL(url), 1500);
       }
-      setShareFeedback('문구가 복사되고 PDF 파일이 다운로드되었습니다.');
+      showFeedback('문구가 복사되고 PDF 파일이 다운로드되었습니다.');
     } catch (err: any) {
       if (err.name !== 'AbortError') {
         console.error('Contact share error:', err);
@@ -324,10 +440,10 @@ ${orgName} 배상`;
       const fullText = `제목: ${emailSubject}\n\n${emailBody}`;
       await navigator.clipboard.writeText(fullText);
       setCopiedEmail(true);
-      setShareFeedback('이메일 제목과 본문이 복사되었습니다.');
+      showFeedback('이메일 제목과 본문이 복사되었습니다.');
       setTimeout(() => setCopiedEmail(false), 3000);
     } catch {
-      setShareFeedback('클립보드 복사에 실패했습니다.');
+      showFeedback('클립보드 복사에 실패했습니다.');
     }
   };
 
@@ -363,10 +479,10 @@ ${orgName} 배상`;
 
       window.location.href = mailtoUrl;
 
-      setShareFeedback(`✉️ [${to || targetName + '님'}] 수신자로 메일 작성 창이 바로 열렸습니다. 다운로드된 PDF 파일을 첨부하여 발송해주세요!`);
+      showFeedback(`✉️ [${to || targetName + '님'}] 수신자로 메일 작성 창이 바로 열렸습니다. 다운로드된 PDF 파일을 첨부하여 발송해주세요!`);
     } catch (err) {
       console.error('Email send error:', err);
-      setShareFeedback('이메일 실행 중 오류가 발생했습니다.');
+      showFeedback('이메일 실행 중 오류가 발생했습니다.');
     } finally {
       setIsSharing(false);
     }
@@ -391,7 +507,7 @@ ${orgName} 배상`;
     const body = encodeURIComponent(emailBody);
     const gmailUrl = `https://mail.google.com/mail/?view=cm&fs=1&to=${to}&su=${subj}&body=${body}`;
     window.open(gmailUrl, '_blank', 'noopener,noreferrer');
-    setShareFeedback(`웹용 Gmail 새 편지창이 열렸습니다 (${to ? '받는사람: ' + to : '본문 자동입력'}). 다운로드된 PDF 파일을 첨부해주세요!`);
+    showFeedback(`웹용 Gmail 새 편지창이 열렸습니다 (${to ? '받는사람: ' + to : '본문 자동입력'}). 다운로드된 PDF 파일을 첨부해주세요!`);
   };
 
   // 6. Open Naver Mail directly in Web Browser
@@ -412,7 +528,7 @@ ${orgName} 배상`;
     setCopiedEmail(true);
 
     window.open('https://mail.naver.com/write/popup', '_blank', 'noopener,noreferrer');
-    setShareFeedback('네이버 메일 작성창이 열렸습니다! (본문 복사됨 + PDF 파일 다운로드됨)');
+    showFeedback('네이버 메일 작성창이 열렸습니다! (본문 복사됨 + PDF 파일 다운로드됨)');
   };
 
   const pdfFileName = `기부금영수증_${(targetName || receipt.donorName || '기부자').replace(/[\\/:*?"<>|]/g, '_')}_${(receipt.receiptNo || '').replace(/[\\/:*?"<>|]/g, '_')}.pdf`;
@@ -490,14 +606,24 @@ ${orgName} 배상`;
 
           {/* Feedback Alert */}
           {shareFeedback && (
-            <div className="mx-5 mt-3 p-3 rounded-xl bg-emerald-50 border border-emerald-300 text-emerald-950 text-xs flex items-center justify-between gap-2 animate-in fade-in duration-150">
+            <div
+              className={`mx-5 mt-3 p-3 rounded-xl border text-xs flex items-center justify-between gap-2 animate-in fade-in duration-150 ${
+                shareFeedbackTone === 'error'
+                  ? 'bg-red-50 border-red-300 text-red-950'
+                  : 'bg-emerald-50 border-emerald-300 text-emerald-950'
+              }`}
+            >
               <div className="flex items-center gap-2 font-medium">
-                <Sparkles className="w-4 h-4 text-emerald-600 shrink-0" />
+                <Sparkles
+                  className={`w-4 h-4 shrink-0 ${shareFeedbackTone === 'error' ? 'text-red-600' : 'text-emerald-600'}`}
+                />
                 <span className="leading-snug">{shareFeedback}</span>
               </div>
               <button
                 onClick={() => setShareFeedback(null)}
-                className="text-emerald-700 hover:text-emerald-900 text-xs px-1 font-bold"
+                className={`text-xs px-1 font-bold ${
+                  shareFeedbackTone === 'error' ? 'text-red-700 hover:text-red-900' : 'text-emerald-700 hover:text-emerald-900'
+                }`}
               >
                 ✕
               </button>
@@ -676,19 +802,52 @@ ${orgName} 배상`;
               </div>
 
               {activeTab === 'kakao' ? (
-                /* KakaoTalk / SMS Action Grid */
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                <div className="space-y-2.5">
+                  {/* REAL SEND: Kakao Share API (실제 전송) */}
+                  <button
+                    type="button"
+                    onClick={handleKakaoRealShare}
+                    disabled={isKakaoRealSending}
+                    className="w-full p-3.5 rounded-xl bg-[#FEE500] hover:bg-[#FDD835] disabled:opacity-70 text-[#191919] shadow-md hover:shadow-lg transition-all text-left border-2 border-[#191919]/10 cursor-pointer group relative overflow-hidden"
+                  >
+                    <span className="absolute top-2 right-2 text-[9px] font-extrabold bg-[#191919] text-[#FEE500] px-1.5 py-0.5 rounded-full">
+                      실제 전송
+                    </span>
+                    <div className="flex items-center gap-1.5 mb-1">
+                      {isKakaoRealSending ? (
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                      ) : (
+                        <MessageSquare className="w-4 h-4 fill-current" />
+                      )}
+                      <span className="text-sm font-extrabold">카카오톡 공유하기로 바로 전송</span>
+                    </div>
+                    <p className="text-[11px] text-slate-800 leading-snug">
+                      카카오톡 대화상대 선택 창이 열리고, 선택 즉시 PDF 다운로드 링크가 포함된 메시지가
+                      실제로 전송됩니다. (카카오 공식 공유하기 API, 로그인 불필요)
+                    </p>
+                    {!isKakaoConfigured() && (
+                      <p className="mt-1.5 text-[10.5px] font-semibold text-red-700 bg-red-50 border border-red-200 rounded px-2 py-1">
+                        ⚠️ 카카오 JS 키(VITE_KAKAO_JS_KEY)가 아직 설정되지 않았습니다. developers.kakao.com에서
+                        무료 키를 발급 후 .env에 설정해주세요.
+                      </p>
+                    )}
+                  </button>
+
+                  <p className="text-[10.5px] text-slate-500 px-0.5">아래는 수동으로 진행하는 보조 방법입니다.</p>
+
+                  {/* Manual / fallback KakaoTalk / SMS Action Grid */}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
                   {/* Action 1: Kakao Direct Launch */}
                   <button
                     type="button"
                     onClick={handleKakaoQuickLaunch}
                     disabled={isSharing}
-                    className="p-3 rounded-xl bg-[#FEE500] hover:bg-[#FDD835] text-[#191919] shadow-sm hover:shadow-md transition-all text-left border border-yellow-400/50 cursor-pointer group"
+                    className="p-3 rounded-xl bg-white hover:bg-slate-50 text-[#191919] shadow-sm hover:shadow-md transition-all text-left border border-yellow-400/50 cursor-pointer group"
                   >
                     <div className="flex items-center justify-between mb-1">
                       <span className="text-xs font-extrabold flex items-center gap-1.5">
                         <MessageSquare className="w-4 h-4 fill-current" />
-                        <span>카카오톡 바로 열기 & 전송</span>
+                        <span>카카오톡 바로 열기 & 전송 (수동)</span>
                       </span>
                       <ChevronRight className="w-4 h-4 text-slate-600 group-hover:translate-x-0.5 transition-transform" />
                     </div>
@@ -733,10 +892,43 @@ ${orgName} 배상`;
                       시스템 연락처 목록(대화상대 성명)을 열어 영수증 PDF 파일과 안내 문구를 함께 전송합니다.
                     </p>
                   </button>
+                  </div>
                 </div>
               ) : (
-                /* Email Action Grid */
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                <div className="space-y-2.5">
+                  {/* REAL SEND: Backend auto email dispatch (실제 전송) */}
+                  <button
+                    type="button"
+                    onClick={handleEmailRealSend}
+                    disabled={isEmailRealSending}
+                    className="w-full p-3.5 rounded-xl bg-blue-900 hover:bg-blue-800 disabled:opacity-70 text-white shadow-md hover:shadow-lg transition-all text-left cursor-pointer group relative overflow-hidden"
+                  >
+                    <span className="absolute top-2 right-2 text-[9px] font-extrabold bg-emerald-400 text-emerald-950 px-1.5 py-0.5 rounded-full">
+                      실제 전송
+                    </span>
+                    <div className="flex items-center gap-1.5 mb-1">
+                      {isEmailRealSending ? (
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                      ) : emailRealSent ? (
+                        <CheckCircle2 className="w-4 h-4 text-emerald-300" />
+                      ) : (
+                        <Send className="w-4 h-4" />
+                      )}
+                      <span className="text-sm font-extrabold">
+                        {isEmailRealSending ? '서버에서 이메일 발송 중...' : '서버에서 PDF 첨부 이메일 바로 발송'}
+                      </span>
+                    </div>
+                    <p className="text-[11px] text-blue-100 leading-snug">
+                      {recipientEmail
+                        ? `[${recipientEmail}] 주소로 제목/본문/PDF 첨부파일이 포함된 이메일이 서버를 통해 실제로 전송됩니다.`
+                        : '받는사람 이메일 주소를 입력하면, 서버가 PDF를 첨부해 실제로 메일을 발송합니다.'}
+                    </p>
+                  </button>
+
+                  <p className="text-[10.5px] text-slate-500 px-0.5">아래는 수동으로 진행하는 보조 방법입니다.</p>
+
+                  {/* Manual / fallback Email Action Grid */}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
                   {/* Action 1: Native Mail Client (mailto) */}
                   <button
                     type="button"
@@ -809,6 +1001,7 @@ ${orgName} 배상`;
                       다음 메일, 회사 웹메일 등에 바로 붙여넣기(Ctrl+V)
                     </p>
                   </button>
+                  </div>
                 </div>
               )}
             </div>

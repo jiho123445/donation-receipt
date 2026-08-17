@@ -1,6 +1,7 @@
 import { initializeApp, getApps, type FirebaseApp } from 'firebase/app';
 import { getAuth, type Auth } from 'firebase/auth';
 import { getFirestore, type Firestore } from 'firebase/firestore';
+import { getStorage, type FirebaseStorage } from 'firebase/storage';
 
 // Web App SDK Configuration for: donation-receipt-5d4e7
 export const firebaseConfig = {
@@ -19,6 +20,7 @@ export const app: FirebaseApp = existingApps.length > 0 ? existingApps[0] : init
 // Auth and Firestore instances bound strictly to the same app
 export const auth: Auth = getAuth(app);
 export const db: Firestore = getFirestore(app);
+export const storage: FirebaseStorage = getStorage(app);
 export const firebaseConfigured = true;
 
 export interface FirebaseDiagnostics {
