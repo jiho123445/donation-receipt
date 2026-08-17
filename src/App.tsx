@@ -58,7 +58,9 @@ export default function App() {
   const [activeTab, setActiveTab] = useState<'search' | 'history' | 'excel' | 'settings' | 'print'>('search');
 
   // Core Data
-  const [donations, setDonations] = useState<RawDonationRecord[]>(INITIAL_SAMPLE_DONATIONS);
+  // 실제 후원자료는 항상 Firebase(또는 명시적으로 업로드한 Excel)를 원본으로 사용합니다.
+  // 샘플자료는 사용자가 '샘플 데이터 불러오기'를 눌렀을 때만 로드합니다.
+  const [donations, setDonations] = useState<RawDonationRecord[]>([]);
   const [orgInfo, setOrgInfo] = useState<OrganizationInfo>(getOrganizationInfo());
   const [issuedReceipts, setIssuedReceipts] = useState<IssuedReceiptRecord[]>([]);
   const [printSettings, setPrintSettings] = useState<PrintSettings>(getPrintSettings());
@@ -94,7 +96,7 @@ export default function App() {
 
     if (!firebaseConfigured || !auth) {
       setAuthReady(true);
-      setDonations(INITIAL_SAMPLE_DONATIONS);
+      setDonations([]);
       setOrgInfo(getOrganizationInfo());
       setIssuedReceipts(getIssuedReceipts());
       setPrintSettings(getPrintSettings());
@@ -123,8 +125,20 @@ export default function App() {
           await saveCloudOrganization(localOrg);
         }
         setIssuedReceipts(cloudReceipts);
-        // 기존 Firestore 자료에 중복 행이 있더라도 검색/영수증 합계에서는 한 번만 계산합니다.
-        const normalizedCloudDonations = mergeDonationRecords([], cloudDonations).records;
+        // Firestore에 저장된 각 문서는 각각 하나의 실제 후원행으로 취급합니다.
+        // 동일 날짜/금액이라는 이유로 화면 로딩 단계에서 임의로 합치면 Excel 3건이 2건으로
+        // 줄어드는 데이터 손실이 발생할 수 있으므로 절대로 dedup하지 않습니다.
+        const normalizedCloudDonations = cloudDonations.map((d, index) => ({
+          ...d,
+          id: d.id || `cloud-${index}-${Date.now()}`,
+          donorName: String(d.donorName || '').trim(),
+          idNumber: String(d.idNumber || '').trim(),
+          address: String(d.address || '').trim(),
+          date: String(d.date || ''),
+          amount: Math.round(Number(d.amount || 0)),
+          paymentMethod: String(d.paymentMethod || '').trim(),
+          content: String(d.content || '').trim(),
+        }));
         setDonations(normalizedCloudDonations);
         setFirestoreStatus({
           connected: true,
@@ -146,13 +160,25 @@ export default function App() {
 
 
   // Update Donations Handler
-  // 월별 Excel 자료는 기존 자료를 지우지 않고 누적합니다.
-  // 동일한 납부내역을 다시 올리면 fingerprint로 중복을 제외합니다.
+  //
+  // 중요: 화면의 donations 상태는 '현재 화면에 표시할 자료'일 뿐 원본 DB가 아닙니다.
+  // 특히 '회원 명단 초기화' 후에는 donations=[]가 되므로, Excel 업로드 시 화면 상태를
+  // 기존자료로 사용하면 Firebase에 이미 있는 자료를 놓칠 수 있습니다.
+  // 따라서 로그인된 Firebase 모드에서는 매 업로드 직전에 Cloud의 최신 donations를 다시 읽어
+  // Excel과 병합합니다. 이 방식이면
+  //   Firebase 2건 + Excel 3건 -> 최종 3건
+  // 이 정확하게 유지됩니다.
   const handleUpdateDonations = async (records: RawDonationRecord[]) => {
-    const { records: merged, added, updated, duplicates } = mergeDonationRecords(donations, records);
+    let baseRecords = donations;
+
+    if (firebaseConfigured && auth?.currentUser) {
+      // 회원 명단 초기화 여부와 관계없이 Firebase를 원본으로 다시 읽습니다.
+      baseRecords = await loadCloudDonations();
+    }
+
+    const { records: merged, added, updated, duplicates } = mergeDonationRecords(baseRecords, records);
 
     if (firebaseConfigured && auth?.currentUser && (added.length > 0 || updated.length > 0)) {
-      // 신규 납부내역뿐 아니라 기존 레코드의 주민번호/주소/후원일자가 보강된 경우도 Firebase에 반영합니다.
       await batchSaveCloudDonations([...added, ...updated]);
     }
 
@@ -165,7 +191,10 @@ export default function App() {
     };
   };
 
-  // Clear Donations Handler (Privacy reset)
+  // Clear Donations Handler
+  // 화면/브라우저 메모리만 비웁니다. Firebase의 누적 후원자료는 절대로 삭제하지 않습니다.
+  // 이후 Excel을 다시 업로드하면 handleUpdateDonations가 Firebase 최신자료를 다시 읽어
+  // 누적/중복검사를 수행합니다.
   const handleClearDonations = () => {
     setDonations([]);
     clearActiveDonations();

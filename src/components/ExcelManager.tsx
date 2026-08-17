@@ -21,6 +21,7 @@ export const ExcelManager: React.FC<ExcelManagerProps> = ({
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [lastParseResult, setLastParseResult] = useState<ParseResult | null>(null);
+  const [lastSaveResult, setLastSaveResult] = useState<{ total: number; added: number; duplicates: number } | null>(null);
   const [showClearConfirm, setShowClearConfirm] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -35,6 +36,7 @@ export const ExcelManager: React.FC<ExcelManagerProps> = ({
     setErrorMessage(null);
     setSuccessMessage(null);
     setLastParseResult(null);
+    setLastSaveResult(null);
 
     try {
       const allRecords: RawDonationRecord[] = [];
@@ -68,6 +70,7 @@ export const ExcelManager: React.FC<ExcelManagerProps> = ({
       }
 
       const saveResult = await onUpdateDonations(allRecords);
+      setLastSaveResult(saveResult);
       setLastParseResult({
         records: allRecords,
         columnMapping: allMappings,
@@ -77,7 +80,7 @@ export const ExcelManager: React.FC<ExcelManagerProps> = ({
 
       const skippedText = errors.length > 0 ? ` / 확인 필요 ${errors.length}개 파일` : '';
       setSuccessMessage(
-        `${selectedFiles.length}개 파일 처리 완료: 신규 ${saveResult.added.toLocaleString()}건 누적, 중복 ${saveResult.duplicates.toLocaleString()}건 제외${skippedText}`
+        `${selectedFiles.length}개 파일 분석 ${allRecords.length.toLocaleString()}건 → 신규 ${saveResult.added.toLocaleString()}건 추가 → 중복 ${saveResult.duplicates.toLocaleString()}건 제외 → 최종 누적 ${saveResult.total.toLocaleString()}건${skippedText}`
       );
       if (errors.length > 0) setErrorMessage(errors.join(' / '));
     } catch (err: any) {
@@ -99,6 +102,7 @@ export const ExcelManager: React.FC<ExcelManagerProps> = ({
   const handleLoadSample = () => {
     onLoadSample();
     setLastParseResult(null);
+    setLastSaveResult(null);
     setErrorMessage(null);
   };
 
@@ -175,6 +179,35 @@ export const ExcelManager: React.FC<ExcelManagerProps> = ({
         </div>
       </div>
 
+      {/* Import Diagnostics */}
+      {lastParseResult && (
+        <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 text-xs text-blue-900">
+          <div className="font-bold mb-2">엑셀 처리 결과</div>
+          <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
+            <div className="bg-white rounded border p-2">
+              <div className="text-slate-500">엑셀에서 읽음</div>
+              <div className="font-bold text-base">{lastParseResult.records.length.toLocaleString()}건</div>
+            </div>
+            <div className="bg-white rounded border p-2">
+              <div className="text-slate-500">신규 저장</div>
+              <div className="font-bold text-base">{lastSaveResult?.added ?? '-'}건</div>
+            </div>
+            <div className="bg-white rounded border p-2">
+              <div className="text-slate-500">중복 제외</div>
+              <div className="font-bold text-base">{lastSaveResult?.duplicates ?? '-'}건</div>
+            </div>
+            <div className="bg-white rounded border p-2">
+              <div className="text-slate-500">처리 후 누적</div>
+              <div className="font-bold text-base">{donations.length.toLocaleString()}건</div>
+            </div>
+            <div className="bg-white rounded border p-2">
+              <div className="text-slate-500">총 후원금</div>
+              <div className="font-bold text-base">{donations.reduce((sum, d) => sum + Number(d.amount || 0), 0).toLocaleString()}원</div>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Error Message */}
       {successMessage && (
         <div className="bg-emerald-50 border border-emerald-200 rounded-lg p-4 text-xs text-emerald-800 flex items-start gap-2.5">
@@ -245,7 +278,7 @@ export const ExcelManager: React.FC<ExcelManagerProps> = ({
               className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-red-700 bg-red-50 hover:bg-red-100 border border-red-200 rounded-md transition-colors cursor-pointer"
             >
               <Trash2 className="w-3.5 h-3.5 text-red-600" />
-              <span>회원 명단 초기화</span>
+              <span>화면 명단 초기화</span>
             </button>
           </div>
         </div>
@@ -296,10 +329,10 @@ export const ExcelManager: React.FC<ExcelManagerProps> = ({
               <Trash2 className="w-6 h-6" />
             </div>
             <h3 className="text-base font-bold text-slate-900">
-              후원자료를 메모리에서 완전히 삭제하시겠습니까?
+              화면에 표시된 후원자료를 초기화하시겠습니까?
             </h3>
             <p className="text-xs text-slate-600 mt-2 leading-relaxed">
-              현재 불러온 후원자 및 후원내역이 브라우저 메모리에서 모두 삭제됩니다. (기존에 발급된 영수증 발급대장 내역은 보존됩니다.)
+              현재 화면의 후원자 및 후원내역만 비웁니다. <strong>Firebase에 저장된 누적 후원자료는 삭제되지 않습니다.</strong> 이후 Excel을 다시 업로드하면 Firebase의 기존자료와 비교하여 없는 내역만 추가합니다.
             </p>
 
             <div className="mt-6 flex items-center justify-end gap-3">
@@ -314,10 +347,11 @@ export const ExcelManager: React.FC<ExcelManagerProps> = ({
                   onClearDonations();
                   setShowClearConfirm(false);
                   setLastParseResult(null);
+                  setLastSaveResult(null);
                 }}
                 className="px-4 py-2 text-xs font-bold text-white bg-red-600 hover:bg-red-700 rounded-md shadow-xs cursor-pointer"
               >
-                삭제 확인
+                화면 초기화
               </button>
             </div>
           </div>

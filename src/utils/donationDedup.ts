@@ -1,17 +1,17 @@
 import type { RawDonationRecord } from '../types/donation';
 
 /**
- * 후원내역 중복 제거/보강 유틸리티
+ * v19 후원내역 병합 규칙
  *
- * 핵심 원칙:
- * 1) 서로 다른 후원건을 절대로 '월 + 금액'만으로 병합하지 않습니다.
- * 2) 정확한 후원일자가 있으면 반드시 날짜까지 식별키에 포함합니다.
- * 3) 같은 날짜/금액의 후원도 별도 행으로 존재할 수 있으므로,
- *    기존 자료와 새 자료를 보강할 때는 후보가 정확히 1개일 때만 병합합니다.
- * 4) 후보가 여러 개이거나 식별이 불확실하면 새 레코드를 그대로 보존합니다.
- *
- * v14: 같은 달에 동일 금액을 여러 번 납부한 경우 한 건으로 합쳐지던
- * 데이터 손실 버그를 수정했습니다.
+ * 핵심 원칙
+ * 1. Excel의 유효한 각 행은 1개의 후원건으로 취급합니다.
+ * 2. 동일 Excel의 서로 다른 행은 절대로 같은 Firestore 문서 ID를 공유하지 않습니다.
+ * 3. 같은 파일을 다시 업로드하면 sourceKey(파일+시트+행번호 기반)로 기존 행을 찾습니다.
+ * 4. sourceKey가 없는 구버전 자료는 내용 fingerprint의 '개수'로 보조 중복처리합니다.
+ * 5. incoming 안에서는 중복 제거를 하지 않습니다. 같은 내용의 행 3개도 3건입니다.
+ * 6. 새 행의 ID는 sourceKey가 있으면 sourceKey 기반으로, 없으면 고유 랜덤 ID로 만듭니다.
+ *    기존 버전처럼 fingerprint 해시만으로 ID를 만들면 완전히 동일한 두 행이 같은 문서를
+ *    덮어쓰는 문제가 생길 수 있으므로 절대 fingerprint만으로 새 문서 ID를 만들지 않습니다.
  */
 
 function norm(value?: string): string {
@@ -22,145 +22,69 @@ function normId(value?: string): string {
   return norm(value).replace(/[-\s]/g, '');
 }
 
-function normAddress(value?: string): string {
-  return norm(value);
-}
-
-/** 후원자 식별 우선순위: 주민/사업자번호 → 주소 → 이름 */
 function getIdentity(record: RawDonationRecord): string {
   const id = normId(record.idNumber);
   if (id) return `id:${id}`;
 
-  const address = normAddress(record.address);
+  const address = norm(record.address);
   if (address) return `address:${address}`;
 
   return `name:${norm(record.donorName)}`;
 }
 
-/**
- * 완전히 동일한 납부행인지 판단하는 키입니다.
- * 정확한 날짜가 있으면 YYYY-MM-DD를 사용하고,
- * 날짜가 없는 월별 자료만 YYYY-MM을 사용합니다.
- */
-export function getDonationFingerprint(record: RawDonationRecord): string {
-  const dateKey = record.date?.trim()
-    ? `date:${record.date.trim()}`
-    : `period:${record.period?.trim() || ''}`;
-
-  return [
-    norm(record.donorName),
-    getIdentity(record),
-    dateKey,
-    Math.round(record.amount || 0),
-    norm(record.paymentMethod),
-    norm(record.content),
-  ].join('|');
-}
-
-/**
- * 프로필 보강 후보를 찾기 위한 보조 키입니다.
- *
- * 중요: 기존 v13의 '월 + 금액 + 방법 + 내용' 키는 같은 달에 같은 금액을
- * 두 번 납부한 정상적인 후원건까지 하나로 합치는 원인이었습니다.
- * 따라서 정확한 날짜가 있으면 날짜를 반드시 포함합니다.
- */
 function getPaymentFingerprint(record: RawDonationRecord): string {
   const dateKey = record.date?.trim()
     ? `date:${record.date.trim()}`
     : `period:${record.period?.trim() || ''}`;
 
   return [
-    getIdentity(record),
     norm(record.donorName),
+    getIdentity(record),
     dateKey,
-    Math.round(record.amount || 0),
+    Math.round(Number(record.amount || 0)),
     norm(record.paymentMethod),
     norm(record.content),
   ].join('|');
 }
 
-/**
- * 기존 레코드와 incoming이 같은 납부건의 '정보 보강' 후보인지 판단합니다.
- * 날짜가 둘 다 정확히 있으면 반드시 같은 날짜여야 합니다.
- */
-function samePersonAndPayment(existing: RawDonationRecord, incoming: RawDonationRecord): boolean {
-  const existingId = normId(existing.idNumber);
-  const incomingId = normId(incoming.idNumber);
-
-  if (existingId && incomingId && existingId !== incomingId) return false;
-
-  const sameName = norm(existing.donorName) === norm(incoming.donorName);
-  if (!sameName) return false;
-
-  // 식별번호가 없는 동명이인은 주소가 둘 다 있을 때 주소가 일치해야 합니다.
-  if (!existingId && !incomingId) {
-    const existingAddr = normAddress(existing.address);
-    const incomingAddr = normAddress(incoming.address);
-    if (existingAddr && incomingAddr && existingAddr !== incomingAddr) return false;
-  }
-
-  if (Math.round(existing.amount || 0) !== Math.round(incoming.amount || 0)) return false;
-
-  const existingPayment = norm(existing.paymentMethod);
-  const incomingPayment = norm(incoming.paymentMethod);
-  if (existingPayment && incomingPayment && existingPayment !== incomingPayment) return false;
-
-  const existingContent = norm(existing.content);
-  const incomingContent = norm(incoming.content);
-  if (existingContent && incomingContent && existingContent !== incomingContent) return false;
-
-  // 정확한 날짜가 양쪽 모두 있으면 반드시 동일한 날짜여야 합니다.
-  if (existing.date && incoming.date && existing.date !== incoming.date) return false;
-
-  // 날짜가 한쪽만 정확한 경우에만 '기존 자료 보강'을 허용합니다.
-  if (existing.date && !incoming.date) {
-    if (incoming.period && existing.date.slice(0, 7) !== incoming.period) return false;
-    return !!incoming.period;
-  }
-
-  if (!existing.date && incoming.date) {
-    if (existing.period && incoming.date.slice(0, 7) !== existing.period) return false;
-    return true;
-  }
-
-  if (!existing.date && !incoming.date) {
-    return !!existing.period && !!incoming.period && existing.period === incoming.period;
-  }
-
-  return false;
-}
-
-function enrich(existing: RawDonationRecord, incoming: RawDonationRecord): RawDonationRecord {
-  return {
-    ...existing,
-    donorName: incoming.donorName || existing.donorName,
-    idNumber: incoming.idNumber || existing.idNumber || '',
-    address: incoming.address || existing.address || '',
-    date: incoming.date || existing.date || '',
-    period: incoming.period || existing.period,
-    paymentMethod: incoming.paymentMethod || existing.paymentMethod || '계좌이체',
-    donationType: incoming.donationType || existing.donationType,
-    donationCode: incoming.donationCode || existing.donationCode,
-    content: incoming.content || existing.content || '후원금',
-    amount: Math.round(incoming.amount || existing.amount || 0),
+function sanitizeRecord(raw: RawDonationRecord): RawDonationRecord {
+  const cleaned: RawDonationRecord = {
+    ...raw,
+    id: raw.id ? String(raw.id) : undefined,
+    donorName: String(raw.donorName || '').trim(),
+    idNumber: String(raw.idNumber || '').trim(),
+    address: String(raw.address || '').trim(),
+    date: String(raw.date || '').trim(),
+    period: raw.period ? String(raw.period).trim() : undefined,
+    amount: Math.round(Number(raw.amount || 0)),
+    paymentMethod: String(raw.paymentMethod || '').trim(),
+    content: String(raw.content || '').trim(),
   };
+  return cleaned;
 }
 
-/**
- * Firestore 문서 ID.
- * 정확한 날짜가 있는 자료는 날짜까지 포함하므로 같은 달의 서로 다른 후원건이
- * 동일 문서 ID를 생성하지 않습니다.
- */
-export function getStableDonationId(record: RawDonationRecord): string {
-  const input = getDonationFingerprint(record);
+function hashText(input: string): string {
   let hash = 2166136261;
-
   for (let i = 0; i < input.length; i += 1) {
     hash ^= input.charCodeAt(i);
     hash = Math.imul(hash, 16777619);
   }
+  return (hash >>> 0).toString(16).padStart(8, '0');
+}
 
-  return `donation_${(hash >>> 0).toString(16).padStart(8, '0')}`;
+/**
+ * 새 Firestore 문서에 사용할 ID.
+ * sourceKey가 있으면 같은 Excel의 같은 행을 재업로드할 때 같은 ID를 사용하고,
+ * sourceKey가 없으면 매번 고유 ID를 생성합니다.
+ */
+export function getStableDonationId(record: RawDonationRecord): string {
+  if (record.id) return record.id;
+  if (record.sourceKey) return `donation_${hashText(`source:${record.sourceKey}`)}`;
+  return `donation_${Date.now()}_${Math.random().toString(36).slice(2, 11)}`;
+}
+
+export function getDonationFingerprint(record: RawDonationRecord): string {
+  return getPaymentFingerprint(record);
 }
 
 export function mergeDonationRecords(
@@ -173,120 +97,53 @@ export function mergeDonationRecords(
   duplicates: number;
 } {
   const records: RawDonationRecord[] = [];
-  const exactSeen = new Set<string>();
-  const paymentIndex = new Map<string, number[]>();
-  let duplicates = 0;
-
-  const addPaymentIndex = (record: RawDonationRecord, index: number) => {
-    const key = getPaymentFingerprint(record);
-    const list = paymentIndex.get(key) || [];
-    if (!list.includes(index)) list.push(index);
-    paymentIndex.set(key, list);
-  };
-
-  for (const raw of existing) {
-    const record: RawDonationRecord = {
-      ...raw,
-      id: raw.id || getStableDonationId(raw),
-      donorName: String(raw.donorName || '').trim(),
-      idNumber: String(raw.idNumber || '').trim(),
-      address: String(raw.address || '').trim(),
-      date: raw.date || '',
-      period: raw.period || undefined,
-      amount: Math.round(raw.amount || 0),
-      paymentMethod: raw.paymentMethod || '',
-      content: raw.content || '',
-    };
-
-    const exact = getDonationFingerprint(record);
-
-    // 기존 데이터 자체에 완전 중복이 있으면 하나만 유지합니다.
-    if (exactSeen.has(exact)) continue;
-
-    exactSeen.add(exact);
-    addPaymentIndex(record, records.length);
-    records.push(record);
-  }
-
   const added: RawDonationRecord[] = [];
   const updated: RawDonationRecord[] = [];
+  let duplicates = 0;
+
+  const existingSourceKeys = new Set<string>();
+  const availableByFingerprint = new Map<string, number>();
+
+  for (const raw of existing) {
+    const record = sanitizeRecord(raw);
+    if (record.sourceKey) existingSourceKeys.add(record.sourceKey);
+
+    const fp = getPaymentFingerprint(record);
+    availableByFingerprint.set(fp, (availableByFingerprint.get(fp) || 0) + 1);
+
+    records.push({
+      ...record,
+      id: record.id || getStableDonationId(record),
+    });
+  }
 
   for (const raw of incoming) {
-    const normalized: RawDonationRecord = {
-      ...raw,
-      idNumber: String(raw.idNumber || '').trim(),
-      address: String(raw.address || '').trim(),
-      date: raw.date || '',
-      period: raw.period || undefined,
-      amount: Math.round(raw.amount || 0),
-      paymentMethod: String(raw.paymentMethod || '').trim(),
-      content: String(raw.content || '').trim(),
-    };
+    const normalized = sanitizeRecord(raw);
 
-    const exact = getDonationFingerprint(normalized);
-
-    // 완전히 같은 납부행만 중복으로 제외합니다.
-    if (exactSeen.has(exact)) {
+    // 같은 Excel 파일의 같은 행을 다시 업로드한 경우.
+    if (normalized.sourceKey && existingSourceKeys.has(normalized.sourceKey)) {
       duplicates += 1;
       continue;
     }
 
-    const paymentKey = getPaymentFingerprint(normalized);
-    const indexedCandidates = paymentIndex.get(paymentKey) || [];
-    let existingIndex: number | undefined;
-
-    // 동일 fingerprint가 기존에 정확히 1건일 때만 프로필 보강을 시도합니다.
-    // 2건 이상이면 어느 행인지 확정할 수 없으므로 병합하지 않습니다.
-    if (indexedCandidates.length === 1) {
-      const candidateIndex = indexedCandidates[0];
-      if (samePersonAndPayment(records[candidateIndex], normalized)) {
-        existingIndex = candidateIndex;
-      }
+    // 구버전/파일명 변경 자료에 대한 보조 중복 처리.
+    const fp = getPaymentFingerprint(normalized);
+    const available = availableByFingerprint.get(fp) || 0;
+    if (available > 0) {
+      availableByFingerprint.set(fp, available - 1);
+      duplicates += 1;
+      continue;
     }
 
-    // 기존 자료가 월만 기록되어 있고 새 Excel에 정확한 날짜/프로필이 들어온
-    // 경우에도 후보가 정확히 1개일 때만 보강합니다.
-    if (existingIndex === undefined) {
-      const candidates = records
-        .map((current, idx) => ({ current, idx }))
-        .filter(({ current }) => samePersonAndPayment(current, normalized));
+    // 중요: incoming 내부에서는 dedup하지 않습니다.
+    // 각 행은 반드시 고유 Firestore ID를 가집니다.
+    const withId: RawDonationRecord = {
+      ...normalized,
+      id: getStableDonationId(normalized),
+    };
 
-      if (candidates.length === 1) {
-        existingIndex = candidates[0].idx;
-      }
-    }
-
-    if (existingIndex !== undefined) {
-      const oldRecord = records[existingIndex];
-      const oldExact = getDonationFingerprint(oldRecord);
-      const merged = enrich(oldRecord, normalized);
-      const mergedExact = getDonationFingerprint(merged);
-
-      // 병합 결과가 다른 기존 레코드와 충돌하면 병합하지 않습니다.
-      if (mergedExact !== oldExact && exactSeen.has(mergedExact)) {
-        existingIndex = undefined;
-      } else {
-        records[existingIndex] = merged;
-        exactSeen.delete(oldExact);
-        exactSeen.add(mergedExact);
-        addPaymentIndex(merged, existingIndex);
-        updated.push(merged);
-        duplicates += 1;
-      }
-    }
-
-    if (existingIndex === undefined) {
-      // 기존 레코드와 식별 가능한 중복이 아니므로 반드시 별도 후원건으로 보존합니다.
-      const withId: RawDonationRecord = {
-        ...normalized,
-        id: normalized.id || getStableDonationId(normalized),
-      };
-
-      exactSeen.add(getDonationFingerprint(withId));
-      addPaymentIndex(withId, records.length);
-      records.push(withId);
-      added.push(withId);
-    }
+    records.push(withId);
+    added.push(withId);
   }
 
   return { records, added, updated, duplicates };

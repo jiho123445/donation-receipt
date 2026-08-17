@@ -141,6 +141,16 @@ function parseExcelAmount(val: any): number {
   return Number.isFinite(fallback) ? Math.round(fallback) : 0;
 }
 
+function makeSourceKey(fileName: string, sheetName: string, rowIndex: number, row: any[]): string {
+  const raw = [fileName, sheetName, String(rowIndex), ...row.map((v) => String(v ?? '').trim())].join('|');
+  let hash = 2166136261;
+  for (let i = 0; i < raw.length; i += 1) {
+    hash ^= raw.charCodeAt(i);
+    hash = Math.imul(hash, 16777619);
+  }
+  return `excelrow_${(hash >>> 0).toString(16).padStart(8, '0')}`;
+}
+
 export interface ParseResult {
   records: RawDonationRecord[];
   columnMapping: Record<string, string>;
@@ -248,7 +258,8 @@ export async function parseDonationExcel(file: File): Promise<ParseResult> {
       id: `rec-${Date.now()}-${r}-${Math.random().toString(36).substring(2, 6)}`,
       paymentMethod: '',
       content: '',
-      period: inferredPeriod || undefined,
+      period: inferredPeriod || '',
+      sourceKey: makeSourceKey(file.name, workbook.SheetNames[0], r, row),
       // donationType / donationCode는 선택 항목입니다.
       // 값이 비어 있으면 undefined로 유지하여 영수증 발급 시 단체 기본값을 사용할 수 있게 합니다.
     };
@@ -331,7 +342,8 @@ export async function parseDonationExcel(file: File): Promise<ParseResult> {
           idNumber: '',
           address: '',
           date: '',
-          period: inferredPeriod || undefined,
+          period: inferredPeriod || '',
+          sourceKey: makeSourceKey(file.name, workbook.SheetNames[0], r, row),
           amount,
           paymentMethod: '계좌이체',
           content: '후원금',
@@ -354,7 +366,8 @@ export async function parseDonationExcel(file: File): Promise<ParseResult> {
         idNumber: String(row[1] ?? '').trim(),
         address: String(row[2] ?? '').trim(),
         date: parseExcelDate(row[3]),
-        period: inferredPeriod || undefined,
+        period: inferredPeriod || '',
+        sourceKey: makeSourceKey(file.name, workbook.SheetNames[0], r, row),
         amount,
         paymentMethod: String(row[5] ?? '').trim() || '계좌이체',
         donationType: String(row[6] ?? '').trim() || undefined,

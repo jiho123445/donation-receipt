@@ -25,6 +25,29 @@ export interface FirestoreConnectionStatus {
   code?: string;
 }
 
+/**
+ * Firestore는 객체 안의 undefined 값을 허용하지 않습니다.
+ * Excel에서 선택 열(period, donationType, donationCode 등)이 비어 있으면
+ * 파서가 undefined를 만들 수 있으므로, 저장 직전에 undefined 속성을
+ * 재귀적으로 제거합니다. null/0/false/빈 문자열은 그대로 보존합니다.
+ */
+function stripUndefined<T>(value: T): T {
+  if (Array.isArray(value)) {
+    return value.map((item) => stripUndefined(item)).filter((item) => item !== undefined) as T;
+  }
+
+  if (value && typeof value === 'object') {
+    const result: Record<string, unknown> = {};
+    Object.entries(value as Record<string, unknown>).forEach(([key, item]) => {
+      if (item === undefined) return;
+      result[key] = stripUndefined(item);
+    });
+    return result as T;
+  }
+
+  return value;
+}
+
 function requireDb(): Firestore {
   if (!db) {
     throw new Error('Firestore 데이터베이스가 초기화되지 않았습니다. Firebase 환경변수 설정을 확인하세요.');
@@ -134,7 +157,7 @@ export async function loadCloudDonations(): Promise<RawDonationRecord[]> {
 
 export async function saveCloudDonation(donation: RawDonationRecord): Promise<void> {
   const docId = donation.id || `donation_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
-  await setDoc(doc(requireDb(), 'donations', docId), donation, { merge: true });
+  await setDoc(doc(requireDb(), 'donations', docId), stripUndefined(donation), { merge: true });
 }
 
 export async function batchSaveCloudDonations(donations: RawDonationRecord[]): Promise<void> {
@@ -150,7 +173,7 @@ export async function batchSaveCloudDonations(donations: RawDonationRecord[]): P
     chunk.forEach((d) => {
       const docId = d.id || `donation_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
       const ref = doc(firestore, 'donations', docId);
-      batch.set(ref, d, { merge: true });
+      batch.set(ref, stripUndefined(d), { merge: true });
     });
     await batch.commit();
   }

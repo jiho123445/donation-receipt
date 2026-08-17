@@ -5,6 +5,7 @@ export interface RawDonationRecord {
   address: string;
   date: string; // YYYY-MM-DD; 날짜가 없는 월별 자료는 빈 문자열일 수 있습니다.
   period?: string; // YYYY-MM; Excel 파일명에서 추정한 월별 관리 기간
+  sourceKey?: string; // 동일 Excel의 동일 행을 재업로드할 때만 중복으로 인식하기 위한 안정적 행 키
   amount: number;
   paymentMethod: string; // 계좌이체, CMS, 현금 등
   donationType?: string; // 일반기부금, 지정기부금 등
