@@ -60,6 +60,11 @@ export default function App() {
 
   // Navigation
   const [activeTab, setActiveTab] = useState<'search' | 'history' | 'excel' | 'settings' | 'print'>('search');
+  const [searchResetKey, setSearchResetKey] = useState<number>(0);
+
+  const handleResetSearch = () => {
+    setSearchResetKey((prev) => prev + 1);
+  };
 
   // Core Data
   // 실제 후원자료는 항상 Firebase(또는 명시적으로 업로드한 Excel)를 원본으로 사용합니다.
@@ -369,6 +374,7 @@ export default function App() {
         }}
         orgInfo={orgInfo}
         openSettingsModal={() => setIsOrgSettingsOpen(true)}
+        onResetSearch={handleResetSearch}
       />
 
       {/* Main Content Area */}
@@ -377,6 +383,7 @@ export default function App() {
         {/* Tab 1: Search & Issue Receipt */}
         {activeTab === 'search' && (
           <DonorSearch
+            key={searchResetKey}
             donations={donations}
             orgInfo={orgInfo}
             onStartIssuance={(donor) => setConfirmModalData(donor)}
@@ -384,6 +391,7 @@ export default function App() {
             onOpenHistory={() => setActiveTab('history')}
             onOpenOrgSettings={() => setIsOrgSettingsOpen(true)}
             onOpenPrintSettings={() => setIsPrintSettingsOpen(true)}
+            onResetSearch={handleResetSearch}
           />
         )}
 

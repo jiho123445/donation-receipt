@@ -235,9 +235,17 @@ export const IssuanceConfirmModal: React.FC<IssuanceConfirmModalProps> = ({
               <span className="font-bold text-blue-900">{taxYear}년도</span>
             </div>
 
-            <div className="flex justify-between py-1 border-b border-slate-200">
-              <span className="text-slate-500">후원 건수:</span>
-              <span className="font-semibold text-slate-800">{donations.length}건</span>
+            <div className="flex justify-between items-start py-1 border-b border-slate-200">
+              <span className="text-slate-500 shrink-0">납부내역 (납부일자):</span>
+              <div className="text-right max-h-20 overflow-y-auto space-y-0.5">
+                {donations.map((d, idx) => (
+                  <div key={idx} className="font-mono text-[11px] text-slate-700">
+                    <span className="text-blue-900 font-semibold">{d.date || d.period || '-'}</span>
+                    <span className="text-slate-400 mx-1">|</span>
+                    <span>{formatKRW(d.amount)}원</span>
+                  </div>
+                ))}
+              </div>
             </div>
 
             <div className="flex justify-between items-center py-1.5 border-b border-slate-200 bg-white px-2 rounded">

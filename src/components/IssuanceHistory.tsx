@@ -1,8 +1,9 @@
 import React, { useState, useMemo } from 'react';
-import { FileText, Search, Printer, Download, Ban, Eye, CheckCircle, AlertCircle, Calendar, RotateCcw } from 'lucide-react';
+import { FileText, Search, Printer, Download, Ban, Eye, CheckCircle, AlertCircle, Calendar, RotateCcw, Share2, MessageSquare, Mail } from 'lucide-react';
 import { IssuedReceiptRecord } from '../types/donation';
 import { formatKRW } from '../utils/hangulCurrency';
 import { exportIssuedReceiptsToExcel } from '../utils/excelParser';
+import { ShareReceiptModal } from './ShareReceiptModal';
 
 interface IssuanceHistoryProps {
   receipts: IssuedReceiptRecord[];
@@ -18,6 +19,8 @@ export const IssuanceHistory: React.FC<IssuanceHistoryProps> = ({
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedYear, setSelectedYear] = useState<string>('all');
   const [cancelTargetNo, setCancelTargetNo] = useState<string | null>(null);
+  const [shareTargetReceipt, setShareTargetReceipt] = useState<IssuedReceiptRecord | null>(null);
+  const [shareInitialTab, setShareInitialTab] = useState<'kakao' | 'email'>('kakao');
   // '초기화'는 실제 발급 데이터를 삭제하지 않고, 화면 표시만 초기화합니다.
   // 탭을 이동했다가 다시 돌아와도 초기화 상태가 유지되도록 sessionStorage에 보관합니다.
   const [isViewCleared, setIsViewCleared] = useState(() => {
@@ -280,16 +283,29 @@ export const IssuanceHistory: React.FC<IssuanceHistoryProps> = ({
                           title="영수증 A4 미리보기 및 재인쇄"
                         >
                           <Eye className="w-3.5 h-3.5" />
-                          <span>보기/재인쇄</span>
+                          <span>보기/인쇄</span>
                         </button>
                         {r.status === 'issued' && (
-                          <button
-                            onClick={() => setCancelTargetNo(r.receiptNo)}
-                            className="p-1 text-slate-400 hover:text-red-600 rounded hover:bg-red-50 transition-colors cursor-pointer"
-                            title="발급 취소 처리"
-                          >
-                            <Ban className="w-3.5 h-3.5" />
-                          </button>
+                          <>
+                            <button
+                              onClick={() => {
+                                setShareTargetReceipt(r);
+                                setShareInitialTab('kakao');
+                              }}
+                              className="inline-flex items-center gap-1 px-2 py-1 text-xs font-bold text-[#191919] bg-[#FEE500] hover:bg-[#FDD835] rounded transition-colors cursor-pointer"
+                              title="카카오톡 또는 이메일로 기부금영수증 공유"
+                            >
+                              <Share2 className="w-3.5 h-3.5" />
+                              <span>공유</span>
+                            </button>
+                            <button
+                              onClick={() => setCancelTargetNo(r.receiptNo)}
+                              className="p-1 text-slate-400 hover:text-red-600 rounded hover:bg-red-50 transition-colors cursor-pointer"
+                              title="발급 취소 처리"
+                            >
+                              <Ban className="w-3.5 h-3.5" />
+                            </button>
+                          </>
                         )}
                       </div>
                     </td>
@@ -335,6 +351,14 @@ export const IssuanceHistory: React.FC<IssuanceHistoryProps> = ({
           </div>
         </div>
       )}
+
+      {/* Share Modal (KakaoTalk / E-mail) */}
+      <ShareReceiptModal
+        isOpen={Boolean(shareTargetReceipt)}
+        onClose={() => setShareTargetReceipt(null)}
+        receipt={shareTargetReceipt}
+        initialTab={shareInitialTab}
+      />
     </div>
   );
 };

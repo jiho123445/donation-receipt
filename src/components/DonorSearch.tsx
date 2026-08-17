@@ -1,5 +1,5 @@
 import React, { useState, useMemo } from 'react';
-import { Search, UserCheck, Users, Calendar, FileText, CheckCircle2, AlertCircle, ArrowRight, Upload, Building2, Download } from 'lucide-react';
+import { Search, UserCheck, Users, Calendar, FileText, CheckCircle2, AlertCircle, ArrowRight, Upload, Building2, Download, X, RotateCcw } from 'lucide-react';
 import { RawDonationRecord, DonorGroup, OrganizationInfo } from '../types/donation';
 import { formatKRW, numberToHangulAmount } from '../utils/hangulCurrency';
 import { downloadSampleExcelTemplate } from '../utils/excelParser';
@@ -12,6 +12,7 @@ interface DonorSearchProps {
   onOpenHistory: () => void;
   onOpenOrgSettings: () => void;
   onOpenPrintSettings: () => void;
+  onResetSearch?: () => void;
 }
 
 export const DonorSearch: React.FC<DonorSearchProps> = ({
@@ -22,11 +23,19 @@ export const DonorSearch: React.FC<DonorSearchProps> = ({
   onOpenHistory,
   onOpenOrgSettings,
   onOpenPrintSettings,
+  onResetSearch,
 }) => {
   const [searchInput, setSearchInput] = useState('');
   const [searchedName, setSearchedName] = useState<string | null>(null);
   const [selectedDonorKey, setSelectedDonorKey] = useState<string | null>(null);
   const [selectedTaxYear, setSelectedTaxYear] = useState<number>(2026);
+
+  const handleReset = () => {
+    setSearchInput('');
+    setSearchedName(null);
+    setSelectedDonorKey(null);
+    onResetSearch?.();
+  };
 
   // Group raw donations into unique donors.
   // 이름이 같더라도 주민/사업자번호가 서로 다르면 실제 동명이인으로 분리합니다.
@@ -246,10 +255,12 @@ export const DonorSearch: React.FC<DonorSearchProps> = ({
   // Active donor donations filtered by selected tax year
   const yearDonations = useMemo(() => {
     if (!activeDonor) return [];
-    return activeDonor.donations.filter((d) => {
-      const y = parseInt((d.date || d.period || '').split('-')[0], 10);
-      return y === selectedTaxYear;
-    });
+    return activeDonor.donations
+      .filter((d) => {
+        const y = parseInt((d.date || d.period || '').split('-')[0], 10);
+        return y === selectedTaxYear;
+      })
+      .sort((a, b) => (a.date || a.period || '').localeCompare(b.date || b.period || ''));
   }, [activeDonor, selectedTaxYear]);
 
   const yearTotalAmount = useMemo(() => {
@@ -288,12 +299,19 @@ export const DonorSearch: React.FC<DonorSearchProps> = ({
     <div className="max-w-4xl mx-auto space-y-6">
       {/* 1. Top Section - Foundation Title & Excel Status */}
       <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-xs text-center relative overflow-hidden">
-        <div className="text-xs font-semibold tracking-wider text-blue-900 uppercase mb-1">
-          사단법인 너브내행복나눔재단
-        </div>
-        <h2 className="text-2xl font-black text-slate-900">
-          기부금영수증 발급시스템
-        </h2>
+        <button
+          type="button"
+          onClick={handleReset}
+          className="group inline-flex flex-col items-center focus:outline-hidden cursor-pointer"
+          title="클릭 시 초기 검색화면으로 초기화됩니다"
+        >
+          <div className="text-xs font-semibold tracking-wider text-blue-900 uppercase mb-1 px-2.5 py-0.5 rounded-sm bg-blue-50 border border-blue-200 group-hover:bg-blue-100 transition-colors">
+            사단법인 너브내행복나눔재단
+          </div>
+          <h2 className="text-2xl font-black text-slate-900 group-hover:text-blue-900 transition-colors">
+            기부금영수증 발급시스템
+          </h2>
+        </button>
         <p className="text-xs text-slate-500 mt-1 max-w-lg mx-auto">
           회원명을 입력하면 회원 명단 자료에서 후원내역을 자동 계산하여 법정 서식(A4)으로 발급합니다.
         </p>
@@ -319,13 +337,27 @@ export const DonorSearch: React.FC<DonorSearchProps> = ({
 
       {/* 2. Main Search Card */}
       <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-xs space-y-4">
-        <div className="text-center sm:text-left">
-          <label htmlFor="donor-search-input" className="block text-sm font-bold text-slate-900 mb-1">
-            회원의 성명 또는 회사명을 입력하세요
-          </label>
-          <p className="text-xs text-slate-500">
-            성명을 입력하신 후 검색 버튼을 누르거나 Enter를 치세요.
-          </p>
+        <div className="flex items-center justify-between">
+          <div className="text-left">
+            <label htmlFor="donor-search-input" className="block text-sm font-bold text-slate-900 mb-0.5">
+              회원의 성명 또는 회사명을 입력하세요
+            </label>
+            <p className="text-xs text-slate-500">
+              성명을 입력하신 후 검색 버튼을 누르거나 Enter를 치세요.
+            </p>
+          </div>
+
+          {(searchedName || activeDonor || searchInput) && (
+            <button
+              type="button"
+              onClick={handleReset}
+              className="text-xs text-slate-500 hover:text-blue-900 font-semibold inline-flex items-center gap-1 px-2.5 py-1 rounded-md bg-slate-100 hover:bg-blue-50 border border-slate-200 transition-colors cursor-pointer"
+              title="검색 내용을 지우고 처음 화면으로 초기화합니다"
+            >
+              <RotateCcw className="w-3.5 h-3.5" />
+              <span>초기화</span>
+            </button>
+          )}
         </div>
 
         <form
@@ -343,9 +375,19 @@ export const DonorSearch: React.FC<DonorSearchProps> = ({
               placeholder="예: 홍길동, 김철수, 이영희, (주)홍천희망기업"
               value={searchInput}
               onChange={(e) => setSearchInput(e.target.value)}
-              className="w-full pl-11 pr-4 py-3 text-sm border-2 border-slate-300 rounded-lg focus:border-blue-900 focus:ring-2 focus:ring-blue-900/20 font-medium placeholder:text-slate-400"
+              className="w-full pl-11 pr-10 py-3 text-sm border-2 border-slate-300 rounded-lg focus:border-blue-900 focus:ring-2 focus:ring-blue-900/20 font-medium placeholder:text-slate-400"
               autoFocus
             />
+            {searchInput && (
+              <button
+                type="button"
+                onClick={() => setSearchInput('')}
+                className="absolute right-3 top-1/2 -translate-y-1/2 p-1 text-slate-400 hover:text-slate-600 rounded-full hover:bg-slate-100 cursor-pointer"
+                title="입력 지우기"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            )}
           </div>
           <button
             type="submit"
@@ -584,14 +626,11 @@ export const DonorSearch: React.FC<DonorSearchProps> = ({
             <div className="pt-4 flex flex-col sm:flex-row items-center justify-between gap-3">
               <button
                 type="button"
-                onClick={() => {
-                  setSearchedName(null);
-                  setSelectedDonorKey(null);
-                  setSearchInput('');
-                }}
-                className="w-full sm:w-auto px-4 py-2 text-xs font-semibold text-slate-700 bg-slate-100 hover:bg-slate-200 rounded-lg border border-slate-300 transition-colors cursor-pointer"
+                onClick={handleReset}
+                className="w-full sm:w-auto inline-flex items-center justify-center gap-1.5 px-4 py-2 text-xs font-semibold text-slate-700 bg-slate-100 hover:bg-slate-200 rounded-lg border border-slate-300 transition-colors cursor-pointer"
               >
-                다른 후원자 검색
+                <RotateCcw className="w-3.5 h-3.5 text-slate-500" />
+                <span>다른 후원자 검색 (처음으로)</span>
               </button>
 
               <button

@@ -18,28 +18,85 @@ export const OfficialReceiptA4 = React.forwardRef<HTMLDivElement, OfficialReceip
     },
     ref
   ) => {
+    if (!receipt) {
+      return <div ref={ref} className="hidden" />;
+    }
+
     const {
-      receiptNo,
-      issueDate,
-      taxYear,
-      formType,
-      donorName,
-      donorIdNumber,
-      donorAddress,
-      donations,
-      totalAmount,
-      amountInKorean,
-      orgSnapshot,
+      receiptNo = '',
+      issueDate = '2026-08-15',
+      taxYear = 2026,
+      formType = 'individual',
+      donorName = '',
+      donorIdNumber = '',
+      donorAddress = '',
+      donations = [],
+      totalAmount = 0,
+      amountInKorean = '',
+      orgSnapshot = {} as any,
     } = receipt;
 
     // Format date to Korean notation YYYY년 MM월 DD일
-    const [year, month, day] = (issueDate || '2026-08-15').split('-');
+    const [year = '2026', month = '08', day = '15'] = (issueDate || '2026-08-15').split('-');
     const formattedDate = `${year}년 ${month}월 ${day}일`;
 
-    // Maximum items to display directly in the table
+    // Safe donations array
+    const safeDonations = Array.isArray(donations) ? donations : [];
+
+    // Sort donations chronologically by date
+    const sortedDonations = [...safeDonations].sort((a, b) =>
+      String(a.date || a.period || '').localeCompare(String(b.date || b.period || ''))
+    );
+
+    // Prepare table rows (standard 5 rows max on legal A4 layout)
     const maxTableRows = 5;
-    const displayDonations = donations.slice(0, maxTableRows);
-    const remainingRowsCount = Math.max(0, maxTableRows - displayDonations.length);
+    type TableRowItem = {
+      donationCode: string;
+      dateText: string;
+      content: string;
+      qty: string | number;
+      unitPrice: number | string;
+      amount: number;
+    };
+
+    let displayRows: TableRowItem[] = [];
+    if (sortedDonations.length <= maxTableRows) {
+      displayRows = sortedDonations.map((d) => ({
+        donationCode: d.donationCode || orgSnapshot?.donationCode || '40',
+        dateText: d.date || d.period || issueDate || '-',
+        content: d.content || orgSnapshot?.defaultContent || '후원금',
+        qty: 1,
+        unitPrice: d.amount,
+        amount: d.amount,
+      }));
+    } else {
+      // First 4 items itemized
+      displayRows = sortedDonations.slice(0, 4).map((d) => ({
+        donationCode: d.donationCode || orgSnapshot?.donationCode || '40',
+        dateText: d.date || d.period || issueDate || '-',
+        content: d.content || orgSnapshot?.defaultContent || '후원금',
+        qty: 1,
+        unitPrice: d.amount,
+        amount: d.amount,
+      }));
+      // 5th row summarizes the remaining items
+      const remainingItems = sortedDonations.slice(4);
+      const remainingSum = remainingItems.reduce((s, d) => s + (d.amount || 0), 0);
+      const firstDate = remainingItems[0]?.date || remainingItems[0]?.period || '';
+      const lastDate = remainingItems[remainingItems.length - 1]?.date || remainingItems[remainingItems.length - 1]?.period || '';
+      const dateRangeText = firstDate && lastDate && firstDate !== lastDate ? `${firstDate} ~ ${lastDate}` : (firstDate || '-');
+
+      displayRows.push({
+        donationCode: remainingItems[0]?.donationCode || orgSnapshot?.donationCode || '40',
+        dateText: dateRangeText,
+        content: `외 ${remainingItems.length}건 (연간 합계)`,
+        qty: remainingItems.length,
+        unitPrice: '-',
+        amount: remainingSum,
+      });
+    }
+
+    const remainingRowsCount = Math.max(0, maxTableRows - displayRows.length);
 
     const isIndividual = formType === 'individual';
 
@@ -231,23 +288,23 @@ export const OfficialReceiptA4 = React.forwardRef<HTMLDivElement, OfficialReceip
                   </tr>
                 </thead>
                 <tbody>
-                  {displayDonations.map((item, idx) => (
+                  {displayRows.map((item, idx) => (
                     <tr key={idx} className="h-[21px]">
                       <td className="border border-black py-0.5 px-1 font-mono font-semibold">
-                        {item.donationCode || orgSnapshot.donationCode || '40'}
+                        {item.donationCode}
                       </td>
                       <td className="border border-black py-0.5 px-1">
                         금전
                       </td>
-                      <td className="border border-black py-0.5 px-1 font-mono">
-                        {item.date}
+                      <td className="border border-black py-0.5 px-1 font-mono text-[9px]">
+                        {item.dateText}
                       </td>
                       <td className="border border-black py-0.5 px-1 text-left truncate max-w-[110px]">
-                        {item.content || orgSnapshot.defaultContent || '후원금'}
+                        {item.content}
                       </td>
-                      <td className="border border-black py-0.5 px-1 font-mono">1</td>
+                      <td className="border border-black py-0.5 px-1 font-mono">{item.qty}</td>
                       <td className="border border-black py-0.5 px-1 text-right font-mono">
-                        {formatKRW(item.amount)}
+                        {typeof item.unitPrice === 'number' ? formatKRW(item.unitPrice) : item.unitPrice}
                       </td>
                       <td className="border border-black py-0.5 px-1 text-right font-mono font-semibold">
                         {formatKRW(item.amount)}

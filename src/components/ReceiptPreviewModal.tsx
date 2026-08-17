@@ -1,9 +1,10 @@
 import React, { useState, useRef } from 'react';
-import { X, Printer, Download, ArrowLeft, Loader2, CheckCircle2, AlertCircle } from 'lucide-react';
+import { X, Printer, Download, ArrowLeft, Loader2, CheckCircle2, AlertCircle, MessageSquare, Mail, Share2 } from 'lucide-react';
 import { IssuedReceiptRecord, PrintSettings } from '../types/donation';
 import { OfficialReceiptA4 } from './OfficialReceiptA4';
 import { exportReceiptToPdf } from '../utils/pdfExport';
 import { printReceiptInIsolatedWindow } from '../utils/printHelper';
+import { ShareReceiptModal } from './ShareReceiptModal';
 
 interface ReceiptPreviewModalProps {
   isOpen: boolean;
@@ -20,6 +21,8 @@ export const ReceiptPreviewModal: React.FC<ReceiptPreviewModalProps> = ({
   printSettings = { offsetX: 0, offsetY: 0, scale: 100 },
 }) => {
   const [isSavingPdf, setIsSavingPdf] = useState(false);
+  const [isShareModalOpen, setIsShareModalOpen] = useState(false);
+  const [shareInitialTab, setShareInitialTab] = useState<'kakao' | 'email'>('kakao');
   const [statusMessage, setStatusMessage] = useState<{
     type: 'success' | 'info' | 'error';
     text: string;
@@ -28,6 +31,11 @@ export const ReceiptPreviewModal: React.FC<ReceiptPreviewModalProps> = ({
   const receiptContainerRef = useRef<HTMLDivElement | null>(null);
 
   if (!isOpen || !receipt) return null;
+
+  const handleOpenShare = (tab: 'kakao' | 'email') => {
+    setShareInitialTab(tab);
+    setIsShareModalOpen(true);
+  };
 
   // Handle PDF Export with File System Access API (showSaveFilePicker)
   const handleSavePdf = async () => {
@@ -115,13 +123,33 @@ export const ReceiptPreviewModal: React.FC<ReceiptPreviewModalProps> = ({
             </div>
           </div>
 
-          {/* Right: Action Buttons [PDF 저장], [인쇄], [닫기] */}
-          <div className="flex items-center gap-2.5">
+          {/* Right: Action Buttons [카카오톡], [이메일], [PDF 저장], [인쇄], [닫기] */}
+          <div className="flex flex-wrap items-center gap-2">
+            {/* [카카오톡 공유] Button */}
+            <button
+              onClick={() => handleOpenShare('kakao')}
+              className="inline-flex items-center gap-1.5 px-3.5 py-2 text-xs sm:text-sm font-bold bg-[#FEE500] hover:bg-[#FDD835] text-[#191919] rounded-lg shadow-md hover:shadow-yellow-500/20 transition-all cursor-pointer ring-2 ring-yellow-400/40"
+              title="기부금영수증 카카오톡 / 문자 공유"
+            >
+              <MessageSquare className="w-4 h-4 fill-current" />
+              <span>카카오톡</span>
+            </button>
+
+            {/* [이메일 전송] Button */}
+            <button
+              onClick={() => handleOpenShare('email')}
+              className="inline-flex items-center gap-1.5 px-3.5 py-2 text-xs sm:text-sm font-bold bg-indigo-600 hover:bg-indigo-500 active:bg-indigo-700 text-white rounded-lg shadow-md hover:shadow-indigo-500/20 transition-all cursor-pointer ring-2 ring-indigo-400/40"
+              title="기부금영수증 이메일 발송 안내"
+            >
+              <Mail className="w-4 h-4" />
+              <span>이메일</span>
+            </button>
+
             {/* [PDF 저장] Button */}
             <button
               onClick={handleSavePdf}
               disabled={isSavingPdf}
-              className="inline-flex items-center gap-2 px-4 py-2.5 text-sm font-bold bg-emerald-600 hover:bg-emerald-500 active:bg-emerald-700 disabled:bg-slate-700 text-white rounded-lg shadow-lg hover:shadow-emerald-500/25 transition-all cursor-pointer ring-2 ring-emerald-400/40"
+              className="inline-flex items-center gap-1.5 px-3.5 py-2 text-xs sm:text-sm font-bold bg-emerald-600 hover:bg-emerald-500 active:bg-emerald-700 disabled:bg-slate-700 text-white rounded-lg shadow-md hover:shadow-emerald-500/25 transition-all cursor-pointer ring-2 ring-emerald-400/40"
               title="기부금영수증을 PDF 파일로 저장"
             >
               {isSavingPdf ? (
@@ -141,7 +169,7 @@ export const ReceiptPreviewModal: React.FC<ReceiptPreviewModalProps> = ({
             <button
               onClick={handlePrint}
               disabled={isSavingPdf}
-              className="inline-flex items-center gap-2 px-4 py-2.5 text-sm font-bold bg-blue-600 hover:bg-blue-500 active:bg-blue-700 disabled:bg-slate-700 text-white rounded-lg shadow-lg hover:shadow-blue-500/25 transition-all cursor-pointer ring-2 ring-blue-400/40"
+              className="inline-flex items-center gap-1.5 px-3.5 py-2 text-xs sm:text-sm font-bold bg-blue-600 hover:bg-blue-500 active:bg-blue-700 disabled:bg-slate-700 text-white rounded-lg shadow-md hover:shadow-blue-500/25 transition-all cursor-pointer ring-2 ring-blue-400/40"
               title="기부금영수증 인쇄 (프린터 출력)"
             >
               <Printer className="w-4 h-4 text-blue-100" />
@@ -203,6 +231,15 @@ export const ReceiptPreviewModal: React.FC<ReceiptPreviewModalProps> = ({
           isPreviewMode={false}
         />
       </div>
+
+      {/* Share Modal (KakaoTalk / E-mail) */}
+      <ShareReceiptModal
+        isOpen={isShareModalOpen}
+        onClose={() => setIsShareModalOpen(false)}
+        receipt={receipt}
+        receiptElementRef={receiptContainerRef}
+        initialTab={shareInitialTab}
+      />
     </>
   );
 };

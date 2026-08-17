@@ -6,7 +6,22 @@ const COLUMN_SYNONYMS = {
   donorName: ['성명', '성명후원자명', '이름', '후원자명', '기부자명', '기부자', '후원자', '회원명', '이름상호', '상호'],
   idNumber: ['주민등록번호', '주민번호', '주민등록번호/사업자번호', '주민번호/사업자번호', '주민/사업자번호', '주민사업자번호', '사업자번호', '사업자등록번호', '식별번호', '고유식별번호'],
   address: ['주소', '주소(소재지)', '주소 / 소재지', '소재지', '거주지', '기부자주소', '기부자 주소', '도로명주소', '본점소재지', '사업장소재지'],
-  date: ['후원일', '후원일자', '후원연월일', '납부일', '납부일자', '납부연월일', '납부연월', '연월일', '기부일', '기부일자', '기부연월일', '일자', '날짜', '입금일', '입금일자', '입금연월일'],
+  date: [
+    '납부연월일', '납부 연월일', '납부년월일', '납부 년월일', '납부일자', '납부일', '납부연월', '납부년월', '납부일시', '납부날짜', '납부 날짜',
+    '후원연월일', '후원 연월일', '후원년월일', '후원 년월일', '후원일자', '후원일', '후원연월', '후원년월', '후원일시', '후원날짜', '후원 날짜',
+    '기부연월일', '기부 연월일', '기부년월일', '기부 년월일', '기부일자', '기부일', '기부연월', '기부년월', '기부일시', '기부날짜', '기부 날짜',
+    '입금연월일', '입금 연월일', '입금년월일', '입금일자', '입금일', '입금연월', '입금년월', '입금일시', '입금날짜', '입금 날짜',
+    '거래연월일', '거래년월일', '거래일자', '거래일', '거래일시', '거래날짜',
+    '이체연월일', '이체년월일', '이체일자', '이체일', '이체일시',
+    '결제연월일', '결제일자', '결제일', '결제일시',
+    '수납연월일', '수납일자', '수납일', '수납일시',
+    '처리연월일', '처리일자', '처리일', '처리일시',
+    '발생연월일', '발생일자', '발생일', '발생일시',
+    '승인연월일', '승인일자', '승인일', '승인일시',
+    '출금연월일', '출금일자', '출금일', '출금일시',
+    '연월일', '년월일', '일자', '날짜', '일시',
+    'date', 'donationdate', 'paymentdate'
+  ],
   amount: ['후원금', '후원금액', '후원금액원', '납부금액', '납부금액원', '금액', '금액원', '기부금액', '기부금', '입금액', '수납액', '납부액'],
   paymentMethod: ['후원방법', '납부방법', '결제방법', '이체방법', '수단', '결제수단', '구분방법'],
   donationType: ['기부금유형', '기부유형', '유형', '기부구분', '구분'],
@@ -82,6 +97,7 @@ function inferPeriodFromFileName(fileName: string): string {
 function parseExcelDate(val: any): string {
   if (val === null || val === undefined || val === '') return '';
 
+  // 1. JS Date instance
   if (val instanceof Date && !Number.isNaN(val.getTime())) {
     const y = val.getFullYear();
     const m = String(val.getMonth() + 1).padStart(2, '0');
@@ -89,30 +105,75 @@ function parseExcelDate(val: any): string {
     return `${y}-${m}-${d}`;
   }
 
-  // Excel serial date number
-  if (typeof val === 'number' && Number.isFinite(val)) {
-    const dateObj = XLSX.SSF.parse_date_code(val);
-    if (dateObj?.y && dateObj?.m && dateObj?.d) {
-      return `${dateObj.y}-${String(dateObj.m).padStart(2, '0')}-${String(dateObj.d).padStart(2, '0')}`;
+  // 2. Cell object wrapper (e.g. from SheetJS or formula evaluation)
+  if (typeof val === 'object' && val !== null) {
+    const candidate = (val as any).w ?? (val as any).v ?? (val as any).value ?? (val as any).text;
+    if (candidate !== undefined && candidate !== null && candidate !== val) {
+      const res = parseExcelDate(candidate);
+      if (res) return res;
     }
   }
 
-  const str = String(val).trim();
+  // 3. Excel serial date number (e.g. 45300 or string "45300" / "45300.5")
+  const numVal =
+    typeof val === 'number'
+      ? val
+      : typeof val === 'string' && /^\d{4,5}(?:\.\d+)?$/.test(val.trim())
+      ? Number(val.trim())
+      : NaN;
+
+  if (!Number.isNaN(numVal) && Number.isFinite(numVal) && numVal >= 1000 && numVal <= 90000) {
+    try {
+      const dateObj = XLSX.SSF.parse_date_code(numVal);
+      if (dateObj?.y && dateObj?.m && dateObj?.d) {
+        return `${dateObj.y}-${String(dateObj.m).padStart(2, '0')}-${String(dateObj.d).padStart(2, '0')}`;
+      }
+    } catch {
+      // fallback to string parsing
+    }
+  }
+
+  let str = String(val).trim();
   if (!str) return '';
 
-  // YYYY-MM-DD / YYYY.MM.DD / YYYY/MM/DD / YYYY년 M월 D일 / YYYY년 M월 D일
-  const matched = str.match(/(\d{4})\s*(?:년|[-./])\s*(\d{1,2})\s*(?:월|[-./])\s*(\d{1,2})\s*일?/);
+  // Remove ISO timestamp or time parts if present (e.g. "2026-03-15T00:00:00.000Z", "2026.03.15 14:30:00")
+  str = str.replace(/T\d{2}:\d{2}:\d{2}.*$/, '').trim();
+
+  // 4. 4-digit year: YYYY-MM-DD / YYYY.MM.DD / YYYY/MM/DD / YYYY년 M월 D일
+  const matched = str.match(/(\d{4})\s*(?:년|[-./])\s*(\d{1,2})\s*(?:월|[-./])\s*(\d{1,2})\s*(?:일|\.)?/);
   if (matched) {
     return `${matched[1]}-${matched[2].padStart(2, '0')}-${matched[3].padStart(2, '0')}`;
   }
 
-  // 8-digit YYYYMMDD
-  const eightDigit = str.match(/^(\d{4})(\d{2})(\d{2})$/);
-  if (eightDigit) return `${eightDigit[1]}-${eightDigit[2]}-${eightDigit[3]}`;
+  // 5. 8-digit YYYYMMDD (e.g. "20260315")
+  const eightDigit = str.match(/^(\d{4})(0[1-9]|1[0-2])(0[1-9]|[12]\d|3[01])$/);
+  if (eightDigit) {
+    return `${eightDigit[1]}-${eightDigit[2]}-${eightDigit[3]}`;
+  }
 
-  // Sometimes Excel text is prefixed/suffixed with spaces or time.
+  // 6. 2-digit year: YY-MM-DD / YY.MM.DD / YY/MM/DD / YY년 M월 D일 (e.g. "26.03.15", "26-3-5")
+  const twoDigit = str.match(/^(\d{2})\s*(?:년|[-./])\s*(\d{1,2})\s*(?:월|[-./])\s*(\d{1,2})\s*(?:일|\.)?/);
+  if (twoDigit) {
+    return `20${twoDigit[1]}-${twoDigit[2].padStart(2, '0')}-${twoDigit[3].padStart(2, '0')}`;
+  }
+
+  // 7. 6-digit YYMMDD (e.g. "260315")
+  const sixDigit = str.match(/^(\d{2})(0[1-9]|1[0-2])(0[1-9]|[12]\d|3[01])$/);
+  if (sixDigit) {
+    return `20${sixDigit[1]}-${sixDigit[2]}-${sixDigit[3]}`;
+  }
+
+  // 8. Embedded date inside text (e.g. "[입금] 2026-03-15 처리")
   const embedded = str.match(/(20\d{2})[-./](\d{1,2})[-./](\d{1,2})/);
-  if (embedded) return `${embedded[1]}-${embedded[2].padStart(2, '0')}-${embedded[3].padStart(2, '0')}`;
+  if (embedded) {
+    return `${embedded[1]}-${embedded[2].padStart(2, '0')}-${embedded[3].padStart(2, '0')}`;
+  }
+
+  // 9. Year-Month only (e.g. "2026-03", "2026.03", "2026년 3월")
+  const yearMonth = str.match(/(\d{4})\s*(?:년|[-./])\s*(\d{1,2})\s*월?/);
+  if (yearMonth) {
+    return `${yearMonth[1]}-${yearMonth[2].padStart(2, '0')}`;
+  }
 
   return '';
 }
@@ -313,7 +374,7 @@ export async function parseDonationExcel(file: File): Promise<ParseResult> {
     // 날짜가 비어 있어도 성명 + 금액이 있으면 업로드합니다.
     // 월별 파일명(예: 2026년 8월.xlsx)에서 기간을 찾았다면 period에 저장합니다.
     // 실제 후원일자가 입력된 경우에는 기존 날짜를 그대로 보존합니다.
-    const validDate = !recordObj.date || /^\d{4}-\d{2}-\d{2}$/.test(recordObj.date);
+    const validDate = !recordObj.date || /^\d{4}-\d{2}(-\d{2})?$/.test(recordObj.date);
     // 업로드 필수값은 성명 + 0보다 큰 후원금액뿐입니다.
     // 주민/사업자번호, 주소, 후원일자, 기부금유형/코드가 비어 있어도 저장합니다.
     if (recordObj.donorName && validDate && Number(recordObj.amount) > 0) {
@@ -322,16 +383,22 @@ export async function parseDonationExcel(file: File): Promise<ParseResult> {
   }
 
   // 일부 Excel 파일은 금액 셀이 수식/서식 문자열이거나 헤더에 특수문자가 섞여 있어
-  // 첫 번째 매핑만으로 행을 잡지 못할 수 있습니다. 이 경우 성명/금액 열을 다시 찾아
+  // 첫 번째 매핑만으로 행을 잡지 못할 수 있습니다. 이 경우 성명/금액/날짜 열을 다시 찾아
   // '성명 + 양수 금액'만으로 한 번 더 안전하게 판별합니다.
   if (records.length === 0) {
     let donorCol = -1;
     let amountCol = -1;
+    let dateCol = -1;
+    let idCol = -1;
+    let addrCol = -1;
     const header = rawJson[headerRowIndex] || [];
     header.forEach((cell: any, idx: number) => {
       const field = findMatchingField(String(cell ?? ''));
       if (field === 'donorName' && donorCol < 0) donorCol = idx;
       if (field === 'amount' && amountCol < 0) amountCol = idx;
+      if (field === 'date' && dateCol < 0) dateCol = idx;
+      if (field === 'idNumber' && idCol < 0) idCol = idx;
+      if (field === 'address' && addrCol < 0) addrCol = idx;
     });
 
     if (donorCol >= 0 && amountCol >= 0) {
@@ -344,9 +411,9 @@ export async function parseDonationExcel(file: File): Promise<ParseResult> {
         records.push({
           id: `rec-${Date.now()}-${r}-${Math.random().toString(36).substring(2, 6)}`,
           donorName,
-          idNumber: '',
-          address: '',
-          date: '',
+          idNumber: idCol >= 0 ? String(row[idCol] ?? '').trim() : '',
+          address: addrCol >= 0 ? String(row[addrCol] ?? '').trim() : '',
+          date: dateCol >= 0 ? parseExcelDate(row[dateCol]) : '',
           period: inferredPeriod || '',
           sourceRow: r + 1,
           amount,

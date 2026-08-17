@@ -10,6 +10,7 @@ interface HeaderProps {
   recordCount?: number;
   issuedCount?: number;
   openSettingsModal: () => void;
+  onResetSearch?: () => void;
 }
 
 export const Header: React.FC<HeaderProps> = ({
@@ -17,27 +18,37 @@ export const Header: React.FC<HeaderProps> = ({
   setActiveTab,
   orgInfo,
   openSettingsModal,
+  onResetSearch,
 }) => {
   const isMissingStatutory = !orgInfo.registrationNo && !orgInfo.bizNo;
+
+  const handleLogoClick = () => {
+    setActiveTab('search');
+    onResetSearch?.();
+  };
 
   return (
     <header className="no-print bg-white border-b border-slate-200 sticky top-0 z-40 shadow-xs">
       {/* Top institution bar */}
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="flex items-center justify-between h-16">
-          {/* Logo & Title */}
-          <div className="flex items-center gap-3 cursor-pointer" onClick={() => setActiveTab('search')}>
-            <div className="w-10 h-10 rounded-lg bg-blue-900 text-white flex items-center justify-center font-bold text-lg shadow-xs">
+          {/* Logo & Title - Clicking '사단법인' or Title resets to clean search home screen */}
+          <div
+            className="flex items-center gap-3 cursor-pointer select-none group hover:opacity-90 transition-opacity"
+            onClick={handleLogoClick}
+            title="클릭 시 기부금영수증 초기 검색화면으로 이동합니다"
+          >
+            <div className="w-10 h-10 rounded-lg bg-blue-900 text-white flex items-center justify-center font-bold text-lg shadow-xs group-hover:bg-blue-800 transition-colors">
               <Building2 className="w-5 h-5 text-blue-200" />
             </div>
             <div>
               <div className="flex items-center gap-2">
-                <span className="text-xs font-semibold px-2 py-0.5 rounded-sm bg-blue-50 text-blue-800 border border-blue-200">
+                <span className="text-xs font-semibold px-2 py-0.5 rounded-sm bg-blue-50 text-blue-800 border border-blue-200 group-hover:bg-blue-100 transition-colors">
                   사단법인
                 </span>
                 <span className="text-xs text-slate-500 font-medium">사회복지법인 행정전산</span>
               </div>
-              <h1 className="text-lg font-bold text-slate-900 leading-tight">
+              <h1 className="text-lg font-bold text-slate-900 leading-tight group-hover:text-blue-950">
                 {orgInfo.name} <span className="text-blue-900 font-extrabold">기부금영수증 발급시스템</span>
               </h1>
             </div>
@@ -62,7 +73,10 @@ export const Header: React.FC<HeaderProps> = ({
         <div className="flex items-center justify-between border-t border-slate-100">
           <nav className="flex space-x-1 py-1.5" aria-label="메인 메뉴">
             <button
-              onClick={() => setActiveTab('search')}
+              onClick={() => {
+                setActiveTab('search');
+                onResetSearch?.();
+              }}
               className={`flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-md transition-all cursor-pointer ${
                 activeTab === 'search'
                   ? 'bg-blue-900 text-white shadow-xs'
