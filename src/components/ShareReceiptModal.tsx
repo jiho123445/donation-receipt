@@ -13,6 +13,7 @@ import {
   Paperclip,
   UserCheck,
   Phone,
+  Smartphone,
   ChevronRight,
   Info,
   CheckCircle2,
@@ -23,6 +24,8 @@ import { IssuedReceiptRecord } from '../types/donation';
 import { formatKRW } from '../utils/hangulCurrency';
 import { generateReceiptPdfBlob } from '../utils/pdfExport';
 import { OfficialReceiptA4 } from './OfficialReceiptA4';
+import { shareViaKakao, isKakaoConfigured } from '../utils/kakaoShare';
+import { uploadReceiptPdfAndGetUrl } from '../utils/receiptStorage';
 
 interface ShareReceiptModalProps {
   isOpen: boolean;
@@ -60,6 +63,7 @@ export const ShareReceiptModal: React.FC<ShareReceiptModalProps> = ({
   const [shareFeedbackTone, setShareFeedbackTone] = useState<'success' | 'error'>('success');
 
   // Real send status
+  const [isKakaoRealSending, setIsKakaoRealSending] = useState(false);
   const [isEmailRealSending, setIsEmailRealSending] = useState(false);
   const [emailRealSent, setEmailRealSent] = useState(false);
 
@@ -74,21 +78,46 @@ export const ShareReceiptModal: React.FC<ShareReceiptModalProps> = ({
   useEffect(() => {
     if (!receipt) return;
 
+    const isMembershipDoc = receipt.documentType === 'membership';
+    const docLabel = isMembershipDoc ? '회비납부확인서' : '기부금영수증';
     const orgName = receipt.orgSnapshot?.name || '사단법인 너브내행복나눔재단';
     const repName = receipt.orgSnapshot?.representative || '대표';
     const regNo = receipt.orgSnapshot?.registrationNo || receipt.orgSnapshot?.bizNo || '등록번호';
     const phone = receipt.orgSnapshot?.phone || '033-435-0999';
-    const donorName = receipt.donorName || '후원자';
+    const donorName = receipt.donorName || (isMembershipDoc ? '회원' : '후원자');
     const amountStr = formatKRW(receipt.totalAmount);
     const year = receipt.taxYear;
     const receiptNo = receipt.receiptNo;
     const issueDate = receipt.issueDate;
-    const fileName = `기부금영수증_${donorName.replace(/[\\/:*?"<>|]/g, '_')}_${receiptNo.replace(/[\\/:*?"<>|]/g, '_')}.pdf`;
+    const fileName = `${docLabel}_${donorName.replace(/[\\/:*?"<>|]/g, '_')}_${receiptNo.replace(/[\\/:*?"<>|]/g, '_')}.pdf`;
 
     setTargetName(donorName);
 
     // KakaoTalk optimized message format with PDF notice
-    const kakaoText =
+    const kakaoText = isMembershipDoc
+?
+`[${orgName} 회비납부확인서 발급 안내]
+
+안녕하세요, ${donorName}님.
+회원님의 소중한 회비 납부에 깊은 감사를 드립니다.
+
+요청하신 ${year}년도 회비납부확인서가 발급되었습니다.
+첨부된 회비납부확인서(PDF) 파일을 확인해 주시기 바랍니다.
+
+■ 발급 정보
+• 회원명: ${donorName}
+• 확인연도: ${year}년도
+• 발급번호: ${receiptNo}
+• 발급일자: ${issueDate}
+• 총 납부금액: ${amountStr}원 (${receipt.donations?.length || 1}건)
+• 발급기관: ${orgName}
+• 첨부파일: 📄 ${fileName}
+
+※ 본 확인서는 세법상 기부금영수증이 아닌 회비 납부 사실 확인용 서식입니다.
+
+문의처: ${orgName} (${phone})
+감사합니다.`
+:
 `[${orgName} 기부금영수증 발급 안내]
 
 안녕하세요, ${donorName}님.
@@ -116,8 +145,39 @@ export const ShareReceiptModal: React.FC<ShareReceiptModalProps> = ({
     setKakaoMessage(kakaoText);
 
     // Email default subject & body
-    const emailSubj = `[기부금영수증 첨부] ${orgName} ${year}년도 법정 기부금영수증 발급 안내 (${donorName}님)`;
-    const emailTxt =
+    const emailSubj = isMembershipDoc
+      ? `[회비납부확인서 첨부] ${orgName} ${year}년도 회비납부확인서 발급 안내 (${donorName}님)`
+      : `[기부금영수증 첨부] ${orgName} ${year}년도 법정 기부금영수증 발급 안내 (${donorName}님)`;
+    const emailTxt = isMembershipDoc
+?
+`안녕하세요, ${donorName} 회원님.
+
+소중한 회비 납부로 ${orgName}과 함께해주셔서 진심으로 감사드립니다.
+회원님의 납부내역에 대한 ${year}년도 회비납부확인서(PDF)를 발급하여 첨부파일과 함께 보내드립니다.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+[회비납부확인서 발급 내역]
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+• 회원(성명/상호): ${donorName}
+• 확인연도: ${year}년도
+• 발급번호: ${receiptNo}
+• 발급일자: ${issueDate}
+• 총 납부금액: 금 ${amountStr}원 (${receipt.donations?.length || 1}건)
+• 첨부파일: ${fileName}
+
+[발급 단체]
+• 단체명: ${orgName}
+• 대표자: ${repName}
+• 소재지: ${receipt.orgSnapshot?.address || '강원특별자치도 홍천군'}
+• 문의전화: ${phone}
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+※ 본 확인서는 세법상 기부금영수증이 아닌 회비 납부 사실 확인용 서식이며, 소득/세액공제와는 무관합니다.
+
+소중한 회비 납부에 다시 한번 감사드립니다.
+
+${orgName} 배상`
+:
 `안녕하세요, ${donorName} 후원자님.
 
 따뜻한 마음으로 ${orgName}에 후원해주셔서 진심으로 감사드립니다.
@@ -156,6 +216,9 @@ ${orgName} 배상`;
 
   if (!isOpen || !receipt) return null;
 
+  const isMembership = receipt.documentType === 'membership';
+  const docLabel = isMembership ? '회비납부확인서' : '기부금영수증';
+
   const getReceiptTargetElement = (): HTMLElement | null => {
     if (receiptElementRef?.current) return receiptElementRef.current;
     if (internalReceiptRef.current) return internalReceiptRef.current;
@@ -166,9 +229,9 @@ ${orgName} 배상`;
     const el = getReceiptTargetElement();
     if (!el || !receipt) return null;
     const blob = await generateReceiptPdfBlob(el);
-    const sanitizedDonor = (targetName || receipt.donorName || '기부자').replace(/[\\/:*?"<>|]/g, '_');
+    const sanitizedDonor = (targetName || receipt.donorName || (isMembership ? '회원' : '기부자')).replace(/[\\/:*?"<>|]/g, '_');
     const sanitizedReceiptNo = (receipt.receiptNo || '').replace(/[\\/:*?"<>|]/g, '_');
-    const fileName = `기부금영수증_${sanitizedDonor}_${sanitizedReceiptNo}.pdf`;
+    const fileName = `${docLabel}_${sanitizedDonor}_${sanitizedReceiptNo}.pdf`;
     const file = new File([blob], fileName, { type: 'application/pdf' });
     return { file, blob, fileName };
   };
@@ -192,7 +255,61 @@ ${orgName} 배상`;
       reader.readAsDataURL(blob);
     });
 
-  // ═══ REAL SEND: 이메일 서버 자동 발송 ═══
+  // ═══ REAL SEND #1: 카카오톡 공유하기 (Kakao Share API) ═══
+  // PDF를 Firebase Storage에 업로드해 다운로드 링크를 만든 뒤,
+  // 카카오 공식 공유하기 레이어를 띄웁니다. 사용자가 대화상대를 선택하면
+  // 실제로 그 채팅방에 메시지(+PDF 다운로드 링크)가 전송됩니다.
+  const handleKakaoRealShare = async () => {
+    if (!isKakaoConfigured()) {
+      showFeedback(
+        '카카오톡 공유하기를 사용하려면 먼저 카카오 JS 키(VITE_KAKAO_JS_KEY)를 설정해야 합니다. .env 파일 설정 후 앱을 다시 시작해주세요. (오류)'
+      );
+      return;
+    }
+
+    setIsKakaoRealSending(true);
+    setShareFeedback(null);
+
+    try {
+      const pdfData = await getOrGeneratePdfData();
+      if (!pdfData) throw new Error(`${docLabel} PDF를 생성할 요소를 찾을 수 없습니다.`);
+
+      const { shortId } = await uploadReceiptPdfAndGetUrl(pdfData.blob, pdfData.fileName, receipt.receiptNo);
+
+      // 카카오톡 공유 링크는 너무 길면(대략 250자 이상) 무효 처리되어 눌러도
+      // 반응이 없습니다. Firebase Storage 원본 다운로드 URL은 토큰 + 한글
+      // 파일명 인코딩까지 겹치면 300~400자를 넘기므로, 발급번호 기반의 아주
+      // 짧은 서버 리다이렉트 링크(/api/r?id=발급번호)를 대신 사용합니다.
+      // 이 링크는 우리 앱 도메인이라 PC 카카오톡의 "외부 도메인 미확인" 제약도
+      // 함께 피할 수 있습니다.
+      const redirectUrl = `${window.location.origin}/api/r?id=${encodeURIComponent(shortId)}`;
+
+      // 카카오톡 "텍스트" 공유 템플릿은 본문 글자 수 제한(약 200자)이 있어서,
+      // 상세 안내문(수백 자)을 그대로 보내면 카카오톡이 정상 카드/버튼 대신
+      // 깨진(비어있는 듯한) "모바일에서 확인해주세요" 화면만 표시하고 링크도
+      // 눌리지 않는 문제가 있었습니다. 상세 내용은 PDF/버튼 링크에 담고,
+      // 본문은 짧은 요약 문구로 대체합니다.
+      const orgName = receipt.orgSnapshot?.name || '사단법인 너브내행복나눔재단';
+      const shortSummaryText = `[${orgName}] ${targetName || receipt.donorName}님, ${receipt.taxYear}년도 ${docLabel}(발급번호 ${receipt.receiptNo})이 발급되었습니다. 아래 버튼을 눌러 PDF를 확인해주세요.`;
+
+      await shareViaKakao({
+        text: shortSummaryText,
+        linkUrl: redirectUrl,
+        buttonTitle: `${docLabel} PDF 확인`,
+      });
+
+      showFeedback(
+        `카카오톡 공유 창이 열렸습니다. [${targetName}] 대화상대(또는 채팅방)를 선택하면 실제로 메시지가 전송됩니다.`
+      );
+    } catch (err: any) {
+      console.error('Kakao real share error:', err);
+      showFeedback(`카카오톡 공유 중 오류가 발생했습니다: ${err?.message || '알 수 없는 오류'} (오류)`);
+    } finally {
+      setIsKakaoRealSending(false);
+    }
+  };
+
+  // ═══ REAL SEND #2: 이메일 서버 자동 발송 ═══
   // PDF를 base64로 변환해 백엔드(server/index.js)의 /api/send-email 로 전달하면,
   // 서버가 nodemailer를 통해 실제 수신자 메일함으로 PDF 첨부 메일을 발송합니다.
   const handleEmailRealSend = async () => {
@@ -208,7 +325,7 @@ ${orgName} 배상`;
 
     try {
       const pdfData = await getOrGeneratePdfData();
-      if (!pdfData) throw new Error('영수증 PDF를 생성할 요소를 찾을 수 없습니다.');
+      if (!pdfData) throw new Error(`${docLabel} PDF를 생성할 요소를 찾을 수 없습니다.`);
 
       const pdfBase64 = await blobToBase64(pdfData.blob);
 
@@ -231,7 +348,7 @@ ${orgName} 배상`;
       }
 
       setEmailRealSent(true);
-      showFeedback(`[${to}] 주소로 기부금영수증 PDF가 첨부된 이메일이 실제로 발송되었습니다!`);
+      showFeedback(`[${to}] 주소로 ${docLabel} PDF가 첨부된 이메일이 실제로 발송되었습니다!`);
     } catch (err: any) {
       console.error('Email real send error:', err);
       showFeedback(`이메일 발송 실패: ${err?.message || '알 수 없는 오류'}`);
@@ -312,10 +429,78 @@ ${orgName} 배상`;
         window.open('kakaotalk://', '_self');
       }
 
-      showFeedback(`💬 [${targetName}] 후원자님께 보낼 문구가 복사되고 PDF가 다운로드되었습니다! 카카오톡에서 [${targetName}] 검색 후 대화방에 붙여넣기(Ctrl+V)하세요.`);
+      showFeedback(`💬 [${targetName}] ${isMembership ? '회원님께' : '후원자님께'} 보낼 문구가 복사되고 PDF가 다운로드되었습니다! 카카오톡에서 [${targetName}] 검색 후 대화방에 붙여넣기(Ctrl+V)하세요.`);
     } catch (err) {
       console.error('Kakao launch error:', err);
       showFeedback('카카오톡 실행 중 오류가 발생했습니다.');
+    } finally {
+      setIsSharing(false);
+    }
+  };
+
+  // 2-B. Send SMS / MMS Directly to Target Phone
+  const handleSendSmsDirect = async () => {
+    const phoneNum = targetPhone.replace(/[^0-9]/g, '');
+    const cleanSmsBody = kakaoMessage;
+
+    // Copy to clipboard as fallback
+    await navigator.clipboard.writeText(cleanSmsBody).catch(() => {});
+    setCopiedKakao(true);
+
+    const isMobile = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
+    const smsUrl = phoneNum
+      ? isMobile
+        ? `sms:${phoneNum}?body=${encodeURIComponent(cleanSmsBody)}`
+        : `sms:${phoneNum}`
+      : `sms:?body=${encodeURIComponent(cleanSmsBody)}`;
+
+    window.location.href = smsUrl;
+    setShareFeedback(phoneNum ? `📱 [${targetName}] (${targetPhone}) 수신자로 문자 앱이 실행되었습니다!` : '📱 문자 메시지 앱이 실행되었습니다.');
+  };
+
+  // 2-C. Share to specific contact / name via OS Share
+  const handleShareContactPicker = async () => {
+    setIsSharing(true);
+    setShareFeedback(null);
+
+    try {
+      const pdfData = await getOrGeneratePdfData();
+
+      // Always copy text to clipboard
+      await navigator.clipboard.writeText(kakaoMessage).catch(() => {});
+      setCopiedKakao(true);
+
+      if (navigator.share && pdfData) {
+        const shareData: ShareData = {
+          title: `[${docLabel}] ${targetName}님 (${receipt.taxYear}년도)`,
+          text: kakaoMessage,
+        };
+
+        if (navigator.canShare && navigator.canShare({ files: [pdfData.file] })) {
+          shareData.files = [pdfData.file];
+        }
+
+        await navigator.share(shareData);
+        showFeedback(`선택하신 대화상대(${targetName}님)에게 ${docLabel} PDF와 문구가 전송되었습니다.`);
+        return;
+      }
+
+      // Fallback
+      if (pdfData) {
+        const url = URL.createObjectURL(pdfData.blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = pdfData.fileName;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        setTimeout(() => URL.revokeObjectURL(url), 1500);
+      }
+      showFeedback('문구가 복사되고 PDF 파일이 다운로드되었습니다.');
+    } catch (err: any) {
+      if (err.name !== 'AbortError') {
+        console.error('Contact share error:', err);
+      }
     } finally {
       setIsSharing(false);
     }
@@ -418,7 +603,7 @@ ${orgName} 배상`;
     showFeedback('네이버 메일 작성창이 열렸습니다! (본문 복사됨 + PDF 파일 다운로드됨)');
   };
 
-  const pdfFileName = `기부금영수증_${(targetName || receipt.donorName || '기부자').replace(/[\\/:*?"<>|]/g, '_')}_${(receipt.receiptNo || '').replace(/[\\/:*?"<>|]/g, '_')}.pdf`;
+  const pdfFileName = `${docLabel}_${(targetName || receipt.donorName || (isMembership ? '회원' : '기부자')).replace(/[\\/:*?"<>|]/g, '_')}_${(receipt.receiptNo || '').replace(/[\\/:*?"<>|]/g, '_')}.pdf`;
 
   return (
     <>
@@ -431,9 +616,9 @@ ${orgName} 배상`;
                 <Share2 className="w-4 h-4" />
               </div>
               <div>
-                <h3 className="text-sm font-bold leading-tight">기부금영수증 발송 & 공유 마법사</h3>
+                <h3 className="text-sm font-bold leading-tight">{docLabel} 발송 & 공유 마법사</h3>
                 <p className="text-[11px] text-slate-300">
-                  {receipt.donorName} 후원자님 | 발급번호 {receipt.receiptNo} ({receipt.taxYear}년도 / {formatKRW(receipt.totalAmount)}원)
+                  {receipt.donorName} {isMembership ? '회원님' : '후원자님'} | 발급번호 {receipt.receiptNo} ({receipt.taxYear}년도 / {formatKRW(receipt.totalAmount)}원)
                 </p>
               </div>
             </div>
@@ -559,7 +744,7 @@ ${orgName} 배상`;
                       <Paperclip className="w-3.5 h-3.5 text-blue-900" />
                       <span className="truncate">{pdfFileName}</span>
                     </div>
-                    <p className="text-[10.5px] text-slate-500">법정 서식 A4 기부금영수증 (직인 날인 완료)</p>
+                    <p className="text-[10.5px] text-slate-500">{isMembership ? 'A4 회비납부확인서 (직인 날인 완료)' : '법정 서식 A4 기부금영수증 (직인 날인 완료)'}</p>
                   </div>
                 </div>
 
@@ -621,20 +806,20 @@ ${orgName} 배상`;
                 </div>
                 <span className="text-[11px] font-medium text-blue-900 flex items-center gap-1">
                   <UserCheck className="w-3.5 h-3.5" />
-                  <span>기부자 자동 연동</span>
+                  <span>{isMembership ? '회원 자동 연동' : '기부자 자동 연동'}</span>
                 </span>
               </div>
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 bg-white p-3 rounded-lg border border-blue-100">
                 <div>
                   <label className="block text-[11px] font-bold text-slate-700 mb-1 flex items-center gap-1">
-                    <span>수신 후원자 성명</span>
+                    <span>{isMembership ? '수신 회원 성명' : '수신 후원자 성명'}</span>
                   </label>
                   <input
                     type="text"
                     value={targetName}
                     onChange={(e) => setTargetName(e.target.value)}
-                    placeholder="후원자 성명"
+                    placeholder={isMembership ? '회원 성명' : '후원자 성명'}
                     className="w-full text-xs px-2.5 py-1.5 border border-slate-300 rounded-md font-bold text-slate-900 focus:ring-2 focus:ring-blue-900/20 focus:border-blue-900 bg-slate-50/50"
                   />
                 </div>
@@ -690,24 +875,96 @@ ${orgName} 배상`;
 
               {activeTab === 'kakao' ? (
                 <div className="space-y-2.5">
-                  {/* KakaoTalk Direct Launch (수동) — 유일한 카카오톡 전송 방법 */}
+                  {/* REAL SEND: Kakao Share API (실제 전송) */}
+                  <button
+                    type="button"
+                    onClick={handleKakaoRealShare}
+                    disabled={isKakaoRealSending}
+                    className="w-full p-3.5 rounded-xl bg-[#FEE500] hover:bg-[#FDD835] disabled:opacity-70 text-[#191919] shadow-md hover:shadow-lg transition-all text-left border-2 border-[#191919]/10 cursor-pointer group relative overflow-hidden"
+                  >
+                    <span className="absolute top-2 right-2 text-[9px] font-extrabold bg-[#191919] text-[#FEE500] px-1.5 py-0.5 rounded-full">
+                      실제 전송
+                    </span>
+                    <div className="flex items-center gap-1.5 mb-1">
+                      {isKakaoRealSending ? (
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                      ) : (
+                        <MessageSquare className="w-4 h-4 fill-current" />
+                      )}
+                      <span className="text-sm font-extrabold">카카오톡 공유하기로 바로 전송</span>
+                    </div>
+                    <p className="text-[11px] text-slate-800 leading-snug">
+                      카카오톡 대화상대 선택 창이 열리고, 선택 즉시 PDF 다운로드 링크가 포함된 메시지가
+                      실제로 전송됩니다. (카카오 공식 공유하기 API, 로그인 불필요)
+                    </p>
+                    {!isKakaoConfigured() && (
+                      <p className="mt-1.5 text-[10.5px] font-semibold text-red-700 bg-red-50 border border-red-200 rounded px-2 py-1">
+                        ⚠️ 카카오 JS 키(VITE_KAKAO_JS_KEY)가 아직 설정되지 않았습니다. developers.kakao.com에서
+                        무료 키를 발급 후 .env에 설정해주세요.
+                      </p>
+                    )}
+                  </button>
+
+                  <p className="text-[10.5px] text-slate-500 px-0.5">아래는 수동으로 진행하는 보조 방법입니다.</p>
+
+                  {/* Manual / fallback KakaoTalk / SMS Action Grid */}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                  {/* Action 1: Kakao Direct Launch */}
                   <button
                     type="button"
                     onClick={handleKakaoQuickLaunch}
                     disabled={isSharing}
-                    className="w-full p-3.5 rounded-xl bg-[#FEE500] hover:bg-[#FDD835] disabled:opacity-70 text-[#191919] shadow-md hover:shadow-lg transition-all text-left border-2 border-[#191919]/10 cursor-pointer group"
+                    className="p-3 rounded-xl bg-white hover:bg-slate-50 text-[#191919] shadow-sm hover:shadow-md transition-all text-left border border-yellow-400/50 cursor-pointer group"
                   >
                     <div className="flex items-center justify-between mb-1">
-                      <span className="text-sm font-extrabold flex items-center gap-1.5">
+                      <span className="text-xs font-extrabold flex items-center gap-1.5">
                         <MessageSquare className="w-4 h-4 fill-current" />
-                        <span>카카오톡 바로 열기 & 전송</span>
+                        <span>카카오톡 바로 열기 & 전송 (수동)</span>
                       </span>
-                      <ChevronRight className="w-4 h-4 text-slate-700 group-hover:translate-x-0.5 transition-transform" />
+                      <ChevronRight className="w-4 h-4 text-slate-600 group-hover:translate-x-0.5 transition-transform" />
                     </div>
                     <p className="text-[11px] text-slate-800 leading-snug">
-                      PDF 자동 다운로드 + 문구 복사 후 카카오톡 실행 (<strong>[{targetName}]</strong> 검색 후 대화방에 붙여넣기)
+                      PDF 자동 다운로드 + 문구 복사 후 카카오톡 실행 (<strong>[{targetName}]</strong> 검색 후 붙여넣기)
                     </p>
                   </button>
+
+                  {/* Action 2: Phone SMS Direct */}
+                  <button
+                    type="button"
+                    onClick={handleSendSmsDirect}
+                    className="p-3 rounded-xl bg-white hover:bg-slate-50 text-slate-900 shadow-sm border border-slate-300 transition-all text-left cursor-pointer group"
+                  >
+                    <div className="flex items-center justify-between mb-1">
+                      <span className="text-xs font-bold flex items-center gap-1.5 text-blue-900">
+                        <Smartphone className="w-4 h-4" />
+                        <span>휴대폰 문자(SMS)로 보내기</span>
+                      </span>
+                      <ChevronRight className="w-4 h-4 text-slate-400 group-hover:translate-x-0.5 transition-transform" />
+                    </div>
+                    <p className="text-[11px] text-slate-600 leading-snug">
+                      {targetPhone ? `[${targetPhone}] 수신자로 문자 앱 자동 실행` : '휴대폰 문자 앱으로 안내 문구 바로 작성'}
+                    </p>
+                  </button>
+
+                  {/* Action 3: OS Contact / Share Picker */}
+                  <button
+                    type="button"
+                    onClick={handleShareContactPicker}
+                    disabled={isSharing}
+                    className="p-3 rounded-xl bg-slate-900 hover:bg-slate-800 text-white shadow-sm transition-all text-left cursor-pointer group sm:col-span-2"
+                  >
+                    <div className="flex items-center justify-between mb-1">
+                      <span className="text-xs font-bold flex items-center gap-1.5">
+                        <Share2 className="w-4 h-4 text-blue-300" />
+                        <span>Windows / 기기 대화상대(성명) 목록에서 선택 전송</span>
+                      </span>
+                      <ChevronRight className="w-4 h-4 text-slate-400 group-hover:translate-x-0.5 transition-transform" />
+                    </div>
+                    <p className="text-[11px] text-slate-300 leading-snug">
+                      시스템 연락처 목록(대화상대 성명)을 열어 {docLabel} PDF 파일과 안내 문구를 함께 전송합니다.
+                    </p>
+                  </button>
+                  </div>
                 </div>
               ) : (
                 <div className="space-y-2.5">
@@ -826,7 +1083,7 @@ ${orgName} 배상`;
           <div className="bg-slate-50 px-5 py-3 border-t border-slate-200 flex items-center justify-between text-xs text-slate-500">
             <span className="flex items-center gap-1">
               <Info className="w-3.5 h-3.5 text-blue-900 shrink-0" />
-              <span>법정 서식 기부금영수증은 직인이 날인된 공식 PDF 원본으로 첨부됩니다.</span>
+              <span>{isMembership ? '회비납부확인서는 직인이 날인된 공식 PDF 원본으로 첨부됩니다.' : '법정 서식 기부금영수증은 직인이 날인된 공식 PDF 원본으로 첨부됩니다.'}</span>
             </span>
             <button
               onClick={onClose}

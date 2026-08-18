@@ -55,12 +55,15 @@ export interface OrganizationInfo {
 
 export type ReceiptFormType = 'individual' | 'corporate';
 
+export type DocumentType = 'receipt' | 'membership';
+
 export interface IssuedReceiptRecord {
   receiptNo: string; // e.g., 2026-00001
   issueDate: string; // YYYY-MM-DD
   taxYear: number;
   formType: ReceiptFormType;
-  
+  documentType?: DocumentType; // 'receipt'(기부금영수증, 기본값) | 'membership'(회비납부확인서)
+
   // Donor info
   donorName: string;
   donorIdNumber: string; // unmasked for printing, masked for log display

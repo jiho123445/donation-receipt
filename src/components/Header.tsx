@@ -1,10 +1,10 @@
 import React from 'react';
-import { Building2, FileText, Settings, Upload, Printer, AlertTriangle } from 'lucide-react';
+import { Building2, FileText, Settings, Upload, Printer, AlertTriangle, Wallet } from 'lucide-react';
 import { OrganizationInfo } from '../types/donation';
 
 interface HeaderProps {
-  activeTab: 'search' | 'history' | 'excel' | 'settings' | 'print';
-  setActiveTab: (tab: 'search' | 'history' | 'excel' | 'settings' | 'print') => void;
+  activeTab: 'search' | 'membership' | 'history' | 'excel' | 'settings' | 'print';
+  setActiveTab: (tab: 'search' | 'membership' | 'history' | 'excel' | 'settings' | 'print') => void;
   orgInfo: OrganizationInfo;
   donorCount?: number;
   recordCount?: number;
@@ -85,6 +85,18 @@ export const Header: React.FC<HeaderProps> = ({
             >
               <FileText className="w-4 h-4" />
               <span>영수증 발급</span>
+            </button>
+
+            <button
+              onClick={() => setActiveTab('membership')}
+              className={`flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-md transition-all cursor-pointer ${
+                activeTab === 'membership'
+                  ? 'bg-blue-900 text-white shadow-xs'
+                  : 'text-slate-700 hover:bg-slate-100 hover:text-slate-900'
+              }`}
+            >
+              <Wallet className="w-4 h-4" />
+              <span>회비납부현황</span>
             </button>
 
             <button

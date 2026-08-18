@@ -106,9 +106,10 @@ export async function exportReceiptToPdf(
   receiptElement: HTMLElement,
   receipt: IssuedReceiptRecord
 ): Promise<PdfExportResult> {
-  const sanitizedDonorName = (receipt.donorName || '기부자').replace(/[\\/:*?"<>|]/g, '_').trim();
-  const sanitizedReceiptNo = (receipt.receiptNo || '영수증').replace(/[\\/:*?"<>|]/g, '_').trim();
-  const fileName = `기부금영수증_${sanitizedDonorName}_${sanitizedReceiptNo}.pdf`;
+  const isMembership = receipt.documentType === 'membership';
+  const sanitizedDonorName = (receipt.donorName || (isMembership ? '회원' : '기부자')).replace(/[\\/:*?"<>|]/g, '_').trim();
+  const sanitizedReceiptNo = (receipt.receiptNo || (isMembership ? '확인서' : '영수증')).replace(/[\\/:*?"<>|]/g, '_').trim();
+  const fileName = `${isMembership ? '회비납부확인서' : '기부금영수증'}_${sanitizedDonorName}_${sanitizedReceiptNo}.pdf`;
 
   // Start PDF Blob generation concurrently in the background so it's ready when user picks the path
   const blobPromise = generateReceiptPdfBlob(receiptElement);

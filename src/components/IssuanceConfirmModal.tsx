@@ -20,6 +20,7 @@ interface IssuanceConfirmModalProps {
   onViewExistingReceipt: (receipt: IssuedReceiptRecord) => void;
   onOpenOrgSettings: () => void;
   existingReceipts: IssuedReceiptRecord[];
+  documentType?: 'receipt' | 'membership';
 }
 
 export const IssuanceConfirmModal: React.FC<IssuanceConfirmModalProps> = ({
@@ -35,7 +36,9 @@ export const IssuanceConfirmModal: React.FC<IssuanceConfirmModalProps> = ({
   onViewExistingReceipt,
   onOpenOrgSettings,
   existingReceipts,
+  documentType = 'receipt',
 }) => {
+  const isMembership = documentType === 'membership';
   const [formType, setFormType] = useState<ReceiptFormType>(
     donorName.includes('(주)') || donorName.includes('주식회사') || donorName.includes('법인') ? 'corporate' : 'individual'
   );
@@ -51,17 +54,18 @@ export const IssuanceConfirmModal: React.FC<IssuanceConfirmModalProps> = ({
   const totalAmount = donations.reduce((sum, d) => sum + d.amount, 0);
   const koreanAmount = numberToHangulAmount(totalAmount);
 
-  // Check for duplicate issuance in this tax year
+  // Check for duplicate issuance in this tax year (문서 종류가 같은 경우에만 중복으로 취급합니다)
   const existingReceipt =
     existingReceipts.find((r) => {
       if (r.status !== 'issued' || r.taxYear !== taxYear || r.donorName !== donorName) return false;
+      if ((r.documentType || 'receipt') !== documentType) return false;
       if (idNumber && r.donorIdNumber && r.donorIdNumber === idNumber) return true;
       return !!address && !!r.donorAddress && r.donorAddress === address;
     }) || null;
   const isDuplicate = !!existingReceipt && !forceNewIssuance;
 
-  // Check if organization statutory IDs are missing
-  const isOrgIncomplete = !orgInfo.registrationNo && !orgInfo.bizNo;
+  // Check if organization statutory IDs are missing (회비납부확인서는 세법상 서식이 아니므로 이 검증을 적용하지 않습니다)
+  const isOrgIncomplete = !isMembership && !orgInfo.registrationNo && !orgInfo.bizNo;
 
   const handleConfirmClick = async () => {
     setLocalError(null);
@@ -94,8 +98,12 @@ export const IssuanceConfirmModal: React.FC<IssuanceConfirmModalProps> = ({
           <div className="flex items-center gap-2">
             <FileText className="w-5 h-5 text-blue-300" />
             <div>
-              <h2 className="text-base font-bold">기부금영수증 발급 확인</h2>
-              <p className="text-xs text-blue-200">후원금 내역을 확인하고 공식 법정 영수증을 작성합니다.</p>
+              <h2 className="text-base font-bold">{isMembership ? '회비납부확인서 발급 확인' : '기부금영수증 발급 확인'}</h2>
+              <p className="text-xs text-blue-200">
+                {isMembership
+                  ? '회비 납부내역을 확인하고 회비납부확인서를 작성합니다.'
+                  : '후원금 내역을 확인하고 공식 법정 영수증을 작성합니다.'}
+              </p>
             </div>
           </div>
           <button
@@ -142,10 +150,10 @@ export const IssuanceConfirmModal: React.FC<IssuanceConfirmModalProps> = ({
                 <AlertTriangle className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" />
                 <div>
                   <h4 className="font-bold text-sm text-amber-950">
-                    이미 발급된 영수증이 존재합니다!
+                    {isMembership ? '이미 발급된 확인서가 존재합니다!' : '이미 발급된 영수증이 존재합니다!'}
                   </h4>
                   <p className="mt-1 leading-relaxed">
-                    <strong>{donorName}</strong>님의 <strong>{taxYear}년도</strong> 기부금영수증이 이미 발급되었습니다.
+                    <strong>{donorName}</strong>님의 <strong>{taxYear}년도</strong> {isMembership ? '회비납부확인서가' : '기부금영수증이'} 이미 발급되었습니다.
                   </p>
                   <div className="mt-1 font-mono text-[11px] text-amber-800">
                     기존 발급번호: <strong>{existingReceipt.receiptNo}</strong> (발급일: {existingReceipt.issueDate}, 금액: {formatKRW(existingReceipt.totalAmount)}원)
@@ -159,7 +167,7 @@ export const IssuanceConfirmModal: React.FC<IssuanceConfirmModalProps> = ({
                   onClick={() => onViewExistingReceipt(existingReceipt)}
                   className="px-3 py-1.5 bg-white border border-amber-400 rounded text-amber-900 font-bold hover:bg-amber-100 transition-colors cursor-pointer"
                 >
-                  기존 영수증 확인
+                  {isMembership ? '기존 확인서 확인' : '기존 영수증 확인'}
                 </button>
                 <button
                   type="button"
@@ -189,11 +197,13 @@ export const IssuanceConfirmModal: React.FC<IssuanceConfirmModalProps> = ({
               >
                 <div className="flex items-center gap-1.5 text-xs font-bold">
                   <User className="w-4 h-4 text-blue-800" />
-                  <span>개인 기부자 서식</span>
+                  <span>{isMembership ? '개인 회원' : '개인 기부자 서식'}</span>
                 </div>
-                <div className="text-[10.5px] text-slate-500 font-normal mt-0.5">
-                  소득세법 시행규칙 별지 제45호의2
-                </div>
+                {!isMembership && (
+                  <div className="text-[10.5px] text-slate-500 font-normal mt-0.5">
+                    소득세법 시행규칙 별지 제45호의2
+                  </div>
+                )}
               </button>
 
               <button
@@ -207,11 +217,13 @@ export const IssuanceConfirmModal: React.FC<IssuanceConfirmModalProps> = ({
               >
                 <div className="flex items-center gap-1.5 text-xs font-bold">
                   <Building className="w-4 h-4 text-blue-800" />
-                  <span>법인/사업자 서식</span>
+                  <span>{isMembership ? '법인/단체 회원' : '법인/사업자 서식'}</span>
                 </div>
-                <div className="text-[10.5px] text-slate-500 font-normal mt-0.5">
-                  법인세법 시행규칙 별지 제63호의3
-                </div>
+                {!isMembership && (
+                  <div className="text-[10.5px] text-slate-500 font-normal mt-0.5">
+                    법인세법 시행규칙 별지 제63호의3
+                  </div>
+                )}
               </button>
             </div>
           </div>
@@ -219,7 +231,7 @@ export const IssuanceConfirmModal: React.FC<IssuanceConfirmModalProps> = ({
           {/* Issuance Details Card */}
           <div className="bg-slate-50 border border-slate-200 rounded-lg p-4 space-y-2.5 text-xs">
             <div className="flex justify-between py-1 border-b border-slate-200">
-              <span className="text-slate-500">기부자 (성명/상호):</span>
+              <span className="text-slate-500">{isMembership ? '회원 (성명/상호):' : '기부자 (성명/상호):'}</span>
               <span className="font-bold text-slate-900">{donorName}</span>
             </div>
 
@@ -249,7 +261,7 @@ export const IssuanceConfirmModal: React.FC<IssuanceConfirmModalProps> = ({
             </div>
 
             <div className="flex justify-between items-center py-1.5 border-b border-slate-200 bg-white px-2 rounded">
-              <span className="text-slate-700 font-bold">총 기부금액:</span>
+              <span className="text-slate-700 font-bold">{isMembership ? '총 납부금액:' : '총 기부금액:'}</span>
               <div className="text-right">
                 <div className="text-sm font-extrabold text-blue-900 font-mono">
                   {formatKRW(totalAmount)}원
@@ -276,7 +288,7 @@ export const IssuanceConfirmModal: React.FC<IssuanceConfirmModalProps> = ({
           </div>
 
           <div className="text-center text-xs font-semibold text-slate-700 pt-1">
-            "위 내용으로 기부금영수증을 발급하시겠습니까?"
+            {isMembership ? '"위 내용으로 회비납부확인서를 발급하시겠습니까?"' : '"위 내용으로 기부금영수증을 발급하시겠습니까?"'}
           </div>
 
           {/* Footer Actions */}
@@ -304,7 +316,7 @@ export const IssuanceConfirmModal: React.FC<IssuanceConfirmModalProps> = ({
               ) : (
                 <>
                   <CheckCircle className="w-4 h-4" />
-                  <span>영수증 발급 및 미리보기</span>
+                  <span>{isMembership ? '확인서 발급 및 미리보기' : '영수증 발급 및 미리보기'}</span>
                 </>
               )}
             </button>

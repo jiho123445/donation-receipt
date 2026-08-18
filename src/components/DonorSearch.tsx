@@ -13,6 +13,7 @@ interface DonorSearchProps {
   onOpenOrgSettings: () => void;
   onOpenPrintSettings: () => void;
   onResetSearch?: () => void;
+  documentType?: 'receipt' | 'membership';
 }
 
 export const DonorSearch: React.FC<DonorSearchProps> = ({
@@ -24,7 +25,9 @@ export const DonorSearch: React.FC<DonorSearchProps> = ({
   onOpenOrgSettings,
   onOpenPrintSettings,
   onResetSearch,
+  documentType = 'receipt',
 }) => {
+  const isMembership = documentType === 'membership';
   const [searchInput, setSearchInput] = useState('');
   const [searchedName, setSearchedName] = useState<string | null>(null);
   const [selectedDonorKey, setSelectedDonorKey] = useState<string | null>(null);
@@ -309,11 +312,13 @@ export const DonorSearch: React.FC<DonorSearchProps> = ({
             사단법인 너브내행복나눔재단
           </div>
           <h2 className="text-2xl font-black text-slate-900 group-hover:text-blue-900 transition-colors">
-            기부금영수증 발급시스템
+            {isMembership ? '회비납부현황 발급시스템' : '기부금영수증 발급시스템'}
           </h2>
         </button>
         <p className="text-xs text-slate-500 mt-1 max-w-lg mx-auto">
-          회원명을 입력하면 회원 명단 자료에서 후원내역을 자동 계산하여 법정 서식(A4)으로 발급합니다.
+          {isMembership
+            ? '회원명을 입력하면 회원 명단 자료에서 납부내역을 자동 계산하여 A4 확인서로 발급합니다.'
+            : '회원명을 입력하면 회원 명단 자료에서 후원내역을 자동 계산하여 법정 서식(A4)으로 발급합니다.'}
         </p>
 
         <div className="mt-4 pt-4 border-t border-slate-100 flex flex-wrap items-center justify-center gap-3 text-xs">
@@ -540,7 +545,7 @@ export const DonorSearch: React.FC<DonorSearchProps> = ({
             <div className="flex items-center gap-3 bg-white p-3 rounded-lg border border-slate-200 shadow-xs">
               <div>
                 <label className="block text-[11px] font-bold text-slate-500 mb-0.5">
-                  기부금영수증 과세연도
+                  {isMembership ? '회비납부확인 연도' : '기부금영수증 과세연도'}
                 </label>
                 <select
                   value={selectedTaxYear}
@@ -557,7 +562,7 @@ export const DonorSearch: React.FC<DonorSearchProps> = ({
 
               <div className="text-right pl-3 border-l border-slate-200">
                 <div className="text-[11px] font-semibold text-slate-500">
-                  {selectedTaxYear}년 후원금 합계
+                  {selectedTaxYear}년 {isMembership ? '회비 합계' : '후원금 합계'}
                 </div>
                 <div className="text-lg font-extrabold text-blue-900 font-mono">
                   {formatKRW(yearTotalAmount)}원
@@ -571,7 +576,7 @@ export const DonorSearch: React.FC<DonorSearchProps> = ({
             <div className="flex items-center justify-between">
               <h4 className="text-xs font-bold text-slate-900 flex items-center gap-1.5">
                 <Calendar className="w-4 h-4 text-slate-600" />
-                <span>{selectedTaxYear}년도 상세 후원내역 ({yearDonations.length}건)</span>
+                <span>{selectedTaxYear}년도 상세 {isMembership ? '납부내역' : '후원내역'} ({yearDonations.length}건)</span>
               </h4>
               <span className="text-xs text-slate-500 font-serif">
                 {numberToHangulAmount(yearTotalAmount)}
@@ -580,7 +585,7 @@ export const DonorSearch: React.FC<DonorSearchProps> = ({
 
             {yearDonations.length === 0 ? (
               <div className="py-8 text-center text-xs text-slate-400 border border-dashed border-slate-200 rounded-lg">
-                {selectedTaxYear}년도에는 납부된 후원내역이 없습니다.
+                {selectedTaxYear}년도에는 납부된 {isMembership ? '납부내역' : '후원내역'}이 없습니다.
               </div>
             ) : (
               <div className="overflow-x-auto border border-slate-200 rounded-lg">
@@ -611,7 +616,7 @@ export const DonorSearch: React.FC<DonorSearchProps> = ({
                     {/* Sum Footer */}
                     <tr className="bg-blue-50/50 font-bold border-t-2 border-slate-300">
                       <td colSpan={4} className="px-4 py-3 text-right text-slate-700">
-                        {selectedTaxYear}년 총 후원금액 합계 :
+                        {selectedTaxYear}년 총 {isMembership ? '납부금액' : '후원금액'} 합계 :
                       </td>
                       <td className="px-4 py-3 text-right text-sm font-extrabold text-blue-900 font-mono">
                         {formatKRW(yearTotalAmount)}원
@@ -640,7 +645,7 @@ export const DonorSearch: React.FC<DonorSearchProps> = ({
                 className="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-6 py-2.5 bg-blue-900 hover:bg-blue-800 disabled:bg-slate-300 text-white font-bold text-sm rounded-lg shadow-md transition-all cursor-pointer"
               >
                 <FileText className="w-4 h-4" />
-                <span>공식 기부금영수증 발급</span>
+                <span>{isMembership ? '회비납부확인서 발급' : '공식 기부금영수증 발급'}</span>
                 <ArrowRight className="w-4 h-4 ml-1" />
               </button>
             </div>

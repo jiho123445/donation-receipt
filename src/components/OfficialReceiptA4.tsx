@@ -27,6 +27,7 @@ export const OfficialReceiptA4 = React.forwardRef<HTMLDivElement, OfficialReceip
       issueDate = '2026-08-15',
       taxYear = 2026,
       formType = 'individual',
+      documentType = 'receipt',
       donorName = '',
       donorIdNumber = '',
       donorAddress = '',
@@ -35,6 +36,8 @@ export const OfficialReceiptA4 = React.forwardRef<HTMLDivElement, OfficialReceip
       amountInKorean = '',
       orgSnapshot = {} as any,
     } = receipt;
+
+    const isMembership = documentType === 'membership';
 
     // Format date to Korean notation YYYY년 MM월 DD일
     const [year = '2026', month = '08', day = '15'] = (issueDate || '2026-08-15').split('-');
@@ -126,11 +129,13 @@ export const OfficialReceiptA4 = React.forwardRef<HTMLDivElement, OfficialReceip
           <div>
             <div className="flex justify-between items-end text-[10px] text-gray-800 pb-1 border-b border-black">
               <span>
-                {isIndividual
+                {isMembership
+                  ? '■ 회비 납부 확인서'
+                  : isIndividual
                   ? '■ 소득세법 시행규칙 [별지 제45호의2서식] <개정 2026. 1. 2.>'
                   : '■ 법인세법 시행규칙 [별지 제63호의3서식] <개정 2026. 1. 2.>'}
               </span>
-              <span className="font-semibold text-[9.5px]">(앞 쪽)</span>
+              {!isMembership && <span className="font-semibold text-[9.5px]">(앞 쪽)</span>}
             </div>
 
             <div className="flex justify-between items-center text-[10px] text-gray-900 mt-1 mb-2 px-0.5">
@@ -148,19 +153,21 @@ export const OfficialReceiptA4 = React.forwardRef<HTMLDivElement, OfficialReceip
             {/* Document Title */}
             <div className="text-center my-2">
               <h1 className="text-2xl font-extrabold tracking-widest font-serif text-black">
-                기 부 금 영 수 증
+                {isMembership ? '회 비 납 부 확 인 서' : '기 부 금 영 수 증'}
               </h1>
-              <p className="text-[9.5px] text-gray-600 mt-0.5">
-                {isIndividual
-                  ? '(「소득세법 시행령」 제113조제1항 및 「소득세법 시행규칙」 제58조제1항 관련)'
-                  : '(「법인세법 시행령」 제39조 및 「법인세법 시행규칙」 제82조제1항 관련)'}
-              </p>
+              {!isMembership && (
+                <p className="text-[9.5px] text-gray-600 mt-0.5">
+                  {isIndividual
+                    ? '(「소득세법 시행령」 제113조제1항 및 「소득세법 시행규칙」 제58조제1항 관련)'
+                    : '(「법인세법 시행령」 제39조 및 「법인세법 시행규칙」 제82조제1항 관련)'}
+                </p>
+              )}
             </div>
 
-            {/* ❶ 기부자 */}
+            {/* ❶ 회원/기부자 */}
             <div className="mt-2">
               <div className="font-bold text-[11px] mb-0.5 text-black">
-                ❶ 기부자
+                {isMembership ? '❶ 회원' : '❶ 기부자'}
               </div>
               <table className="w-full border-collapse border border-black text-[10px]">
                 <tbody>
@@ -190,10 +197,10 @@ export const OfficialReceiptA4 = React.forwardRef<HTMLDivElement, OfficialReceip
               </table>
             </div>
 
-            {/* ❷ 기부금 단체 */}
+            {/* ❷ 기부금 단체 / 발급 단체 */}
             <div className="mt-2">
               <div className="font-bold text-[11px] mb-0.5 text-black">
-                ❷ 기부금 단체
+                {isMembership ? '❷ 발급 단체' : '❷ 기부금 단체'}
               </div>
               <table className="w-full border-collapse border border-black text-[10px]">
                 <tbody>
@@ -225,55 +232,59 @@ export const OfficialReceiptA4 = React.forwardRef<HTMLDivElement, OfficialReceip
                       -
                     </td>
                   </tr>
-                  <tr>
-                    <th className="border border-black bg-gray-100 font-semibold py-1.5 px-2 text-center">
-                      기부금공제대상<br />기부금단체 근거법령
-                    </th>
-                    <td colSpan={3} className="border border-black py-1.5 px-2.5 text-left leading-tight">
-                      {orgSnapshot.designationInfo || '소득세법 시행령 제80조제1항제5호, 법인세법 시행령 제39조제1항제1호바목 공익법인'}
-                    </td>
-                  </tr>
+                  {!isMembership && (
+                    <tr>
+                      <th className="border border-black bg-gray-100 font-semibold py-1.5 px-2 text-center">
+                        기부금공제대상<br />기부금단체 근거법령
+                      </th>
+                      <td colSpan={3} className="border border-black py-1.5 px-2.5 text-left leading-tight">
+                        {orgSnapshot.designationInfo || '소득세법 시행령 제80조제1항제5호, 법인세법 시행령 제39조제1항제1호바목 공익법인'}
+                      </td>
+                    </tr>
+                  )}
                 </tbody>
               </table>
             </div>
 
-            {/* ❸ 기부금 모집처(언론기관 등) */}
-            <div className="mt-2">
-              <div className="font-bold text-[11px] mb-0.5 text-black">
-                ❸ 기부금 모집처(언론기관 등)
+            {/* ❸ 기부금 모집처(언론기관 등) - 회비납부확인서에는 표시하지 않음 */}
+            {!isMembership && (
+              <div className="mt-2">
+                <div className="font-bold text-[11px] mb-0.5 text-black">
+                  ❸ 기부금 모집처(언론기관 등)
+                </div>
+                <table className="w-full border-collapse border border-black text-[10px]">
+                  <tbody>
+                    <tr>
+                      <th className="border border-black bg-gray-100 font-semibold py-1.5 px-2 w-[22%] text-center">
+                        단체명
+                      </th>
+                      <td className="border border-black py-1.5 px-2.5 text-left w-[28%] text-gray-500">
+                        -
+                      </td>
+                      <th className="border border-black bg-gray-100 font-semibold py-1.5 px-2 w-[24%] text-center">
+                        사업자등록번호
+                      </th>
+                      <td className="border border-black py-1.5 px-2.5 text-left w-[26%] text-gray-500 font-mono">
+                        -
+                      </td>
+                    </tr>
+                    <tr>
+                      <th className="border border-black bg-gray-100 font-semibold py-1.5 px-2 text-center">
+                        소재지
+                      </th>
+                      <td colSpan={3} className="border border-black py-1.5 px-2.5 text-left text-gray-500">
+                        - (재단 직접 기부)
+                      </td>
+                    </tr>
+                  </tbody>
+                </table>
               </div>
-              <table className="w-full border-collapse border border-black text-[10px]">
-                <tbody>
-                  <tr>
-                    <th className="border border-black bg-gray-100 font-semibold py-1.5 px-2 w-[22%] text-center">
-                      단체명
-                    </th>
-                    <td className="border border-black py-1.5 px-2.5 text-left w-[28%] text-gray-500">
-                      -
-                    </td>
-                    <th className="border border-black bg-gray-100 font-semibold py-1.5 px-2 w-[24%] text-center">
-                      사업자등록번호
-                    </th>
-                    <td className="border border-black py-1.5 px-2.5 text-left w-[26%] text-gray-500 font-mono">
-                      -
-                    </td>
-                  </tr>
-                  <tr>
-                    <th className="border border-black bg-gray-100 font-semibold py-1.5 px-2 text-center">
-                      소재지
-                    </th>
-                    <td colSpan={3} className="border border-black py-1.5 px-2.5 text-left text-gray-500">
-                      - (재단 직접 기부)
-                    </td>
-                  </tr>
-                </tbody>
-              </table>
-            </div>
+            )}
 
-            {/* ❹ 기부내용 */}
+            {/* ❹ 기부내용 / ❸ 납부내역 */}
             <div className="mt-2">
               <div className="font-bold text-[11px] mb-0.5 flex justify-between items-center text-black">
-                <span>❹ 기부내용</span>
+                <span>{isMembership ? '❸ 납부내역' : '❹ 기부내용'}</span>
                 <span className="text-[9px] font-normal text-gray-500">단위: 원</span>
               </div>
               <table className="w-full border-collapse border border-black text-center text-[9.5px]">
@@ -348,7 +359,11 @@ export const OfficialReceiptA4 = React.forwardRef<HTMLDivElement, OfficialReceip
             {/* Certification / Issuance Statement */}
             <div className="mt-2.5 px-3 py-2 border border-black bg-white text-center">
               <p className="text-[10.5px] font-medium leading-relaxed">
-                {isIndividual ? (
+                {isMembership ? (
+                  <>
+                    위 회원이 회비를 위와 같이 납부하였음을 확인합니다.
+                  </>
+                ) : isIndividual ? (
                   <>
                     「소득세법」 제34조, 「조세특례제한법」 제76조, 제88조의4 및 「지방세특례제한법」 제57조의4에 따라<br />
                     기부금을 위와 같이 기부(수령)하였음을 증명합니다.
@@ -368,7 +383,7 @@ export const OfficialReceiptA4 = React.forwardRef<HTMLDivElement, OfficialReceip
               <div className="mt-2 flex items-center justify-end pr-6 relative">
                 <div className="text-right text-[11px] font-serif leading-tight">
                   <div className="font-bold flex items-center justify-end gap-1.5">
-                    <span>기부금 수령인 :</span>
+                    <span>{isMembership ? '발급 단체 :' : '기부금 수령인 :'}</span>
                     <span>{orgSnapshot.name}</span>
                   </div>
                   <div className="flex items-center justify-end gap-2 mt-1">
@@ -391,23 +406,25 @@ export const OfficialReceiptA4 = React.forwardRef<HTMLDivElement, OfficialReceip
             </div>
           </div>
 
-          {/* Statutory instructions at bottom */}
-          <div className="mt-2 pt-1.5 border-t border-black text-[8px] text-gray-800 leading-normal">
-            <div className="font-bold text-[8.5px] text-black mb-0.5">■ 작성방법 및 유의사항</div>
-            <ol className="list-decimal list-inside space-y-0.5">
-              <li>기부자의 성명(법인명), 주민등록번호(사업자등록번호), 주소(소재지)를 정확하게 적습니다.</li>
-              <li>
-                기부금 단체 및 기부내용란에는 관련 세법상의 코드(법정기부금 10, 지정기부금/공익법인 40, 우리사주조합 42, 종교단체 41 등), 구분(금전 또는 현물), 금액 등을 빠짐없이 기재합니다.
-              </li>
-              <li>금전 외의 현물기부인 경우에는 품명, 수량, 단가 및 가액을 정확히 기재합니다.</li>
-              <li>
-                기부금영수증을 발급하는 자는 기부자별 기부금영수증 발급명세서를 작성하여 5년간 보관하여야 하며, 관할 세무서장의 제출 요구가 있는 때에는 이를 제출하여야 합니다.
-              </li>
-              <li>
-                사실과 다르게 발급하거나 기부자별 발급명세서를 작성·보관하지 아니한 경우에는 관련 세법에 따라 가산세가 부과됩니다.
-              </li>
-            </ol>
-          </div>
+          {/* Statutory instructions at bottom - 회비납부확인서에는 표시하지 않음 */}
+          {!isMembership && (
+            <div className="mt-2 pt-1.5 border-t border-black text-[8px] text-gray-800 leading-normal">
+              <div className="font-bold text-[8.5px] text-black mb-0.5">■ 작성방법 및 유의사항</div>
+              <ol className="list-decimal list-inside space-y-0.5">
+                <li>기부자의 성명(법인명), 주민등록번호(사업자등록번호), 주소(소재지)를 정확하게 적습니다.</li>
+                <li>
+                  기부금 단체 및 기부내용란에는 관련 세법상의 코드(법정기부금 10, 지정기부금/공익법인 40, 우리사주조합 42, 종교단체 41 등), 구분(금전 또는 현물), 금액 등을 빠짐없이 기재합니다.
+                </li>
+                <li>금전 외의 현물기부인 경우에는 품명, 수량, 단가 및 가액을 정확히 기재합니다.</li>
+                <li>
+                  기부금영수증을 발급하는 자는 기부자별 기부금영수증 발급명세서를 작성하여 5년간 보관하여야 하며, 관할 세무서장의 제출 요구가 있는 때에는 이를 제출하여야 합니다.
+                </li>
+                <li>
+                  사실과 다르게 발급하거나 기부자별 발급명세서를 작성·보관하지 아니한 경우에는 관련 세법에 따라 가산세가 부과됩니다.
+                </li>
+              </ol>
+            </div>
+          )}
         </div>
       </div>
     );

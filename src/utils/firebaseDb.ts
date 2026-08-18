@@ -279,9 +279,14 @@ export async function cancelCloudReceipt(receiptNo: string): Promise<void> {
   }
 }
 
-export async function getNextCloudReceiptNumber(taxYear: number): Promise<string> {
+export async function getNextCloudReceiptNumber(
+  taxYear: number,
+  kind: 'receipt' | 'membership' = 'receipt'
+): Promise<string> {
   const firestore = requireDb();
-  const counterRef = doc(firestore, 'counters', String(taxYear));
+  const prefix = kind === 'membership' ? 'MEM-' : '';
+  const counterDocId = kind === 'membership' ? `${taxYear}_membership` : String(taxYear);
+  const counterRef = doc(firestore, 'counters', counterDocId);
   return runTransaction(firestore, async (transaction) => {
     const snap = await transaction.get(counterRef);
     const current = snap.exists() ? Number(snap.data().lastSequence || 0) : 0;
@@ -291,7 +296,7 @@ export async function getNextCloudReceiptNumber(taxYear: number): Promise<string
       { lastSequence: next, updatedAt: new Date().toISOString() },
       { merge: true }
     );
-    return `${taxYear}-${String(next).padStart(5, '0')}`;
+    return `${prefix}${taxYear}-${String(next).padStart(5, '0')}`;
   });
 }
 

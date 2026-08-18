@@ -83,9 +83,10 @@ export function cancelIssuedReceipt(receiptNo: string): void {
   localStorage.setItem(RECEIPTS_STORAGE_KEY, JSON.stringify(updated));
 }
 
-export function getNextReceiptNumber(taxYear: number): string {
+export function getNextReceiptNumber(taxYear: number, kind: 'receipt' | 'membership' = 'receipt'): string {
   const receipts = getIssuedReceipts();
-  const yearPrefix = `${taxYear}-`;
+  const prefix = kind === 'membership' ? 'MEM-' : '';
+  const yearPrefix = `${prefix}${taxYear}-`;
   let maxSeq = 0;
 
   for (const r of receipts.filter((r) => r.receiptNo.startsWith(yearPrefix))) {
@@ -93,7 +94,7 @@ export function getNextReceiptNumber(taxYear: number): string {
     if (!isNaN(num) && num > maxSeq) maxSeq = num;
   }
 
-  return `${taxYear}-${String(maxSeq + 1).padStart(5, '0')}`;
+  return `${yearPrefix}${String(maxSeq + 1).padStart(5, '0')}`;
 }
 
 export function findExistingReceipt(

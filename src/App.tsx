@@ -8,6 +8,7 @@ import {
   IssuedReceiptRecord,
   PrintSettings,
   ReceiptFormType,
+  DocumentType,
 } from './types/donation';
 import {
   getOrganizationInfo,
@@ -59,7 +60,7 @@ export default function App() {
   const [showStatusBanner, setShowStatusBanner] = useState(true);
 
   // Navigation
-  const [activeTab, setActiveTab] = useState<'search' | 'history' | 'excel' | 'settings' | 'print'>('search');
+  const [activeTab, setActiveTab] = useState<'search' | 'membership' | 'history' | 'excel' | 'settings' | 'print'>('search');
   const [searchResetKey, setSearchResetKey] = useState<number>(0);
 
   const handleResetSearch = () => {
@@ -83,6 +84,7 @@ export default function App() {
     address: string;
     taxYear: number;
     donations: RawDonationRecord[];
+    documentType?: DocumentType;
   } | null>(null);
   const [previewReceipt, setPreviewReceipt] = useState<IssuedReceiptRecord | null>(null);
 
@@ -264,11 +266,13 @@ export default function App() {
     }
 
     try {
-      const { donorName, idNumber, address, taxYear, donations: donorItems } = confirmModalData;
+      const { donorName, idNumber, address, taxYear, donations: donorItems, documentType = 'receipt' } = confirmModalData;
+      const isMembership = documentType === 'membership';
       const totalAmount = donorItems.reduce((sum, d) => sum + d.amount, 0);
       const amountInKorean = numberToHangulAmount(totalAmount);
 
-      if (!orgInfo.registrationNo && !orgInfo.bizNo) {
+      // 회비납부확인서는 세법상 공식 기부금영수증이 아니므로 고유번호/사업자등록번호 입력을 강제하지 않습니다.
+      if (!isMembership && !orgInfo.registrationNo && !orgInfo.bizNo) {
         return {
           success: false,
           error: '기부금영수증 발급에 필요한 단체 고유번호 또는 사업자등록번호가 등록되지 않았습니다.',
@@ -283,14 +287,15 @@ export default function App() {
       };
 
       const receiptNo = firebaseConfigured && auth?.currentUser
-        ? await getNextCloudReceiptNumber(taxYear)
-        : getNextReceiptNumber(taxYear);
+        ? await getNextCloudReceiptNumber(taxYear, documentType)
+        : getNextReceiptNumber(taxYear, documentType);
 
       const newReceipt: IssuedReceiptRecord = {
         receiptNo,
         issueDate,
         taxYear,
         formType,
+        documentType,
         donorName,
         donorIdNumber: idNumber,
         donorAddress: address,
@@ -386,7 +391,24 @@ export default function App() {
             key={searchResetKey}
             donations={donations}
             orgInfo={orgInfo}
-            onStartIssuance={(donor) => setConfirmModalData(donor)}
+            documentType="receipt"
+            onStartIssuance={(donor) => setConfirmModalData({ ...donor, documentType: 'receipt' })}
+            onOpenExcel={() => setActiveTab('excel')}
+            onOpenHistory={() => setActiveTab('history')}
+            onOpenOrgSettings={() => setIsOrgSettingsOpen(true)}
+            onOpenPrintSettings={() => setIsPrintSettingsOpen(true)}
+            onResetSearch={handleResetSearch}
+          />
+        )}
+
+        {/* Tab 1b: Search & Issue Membership-fee Confirmation */}
+        {activeTab === 'membership' && (
+          <DonorSearch
+            key={`membership-${searchResetKey}`}
+            donations={donations}
+            orgInfo={orgInfo}
+            documentType="membership"
+            onStartIssuance={(donor) => setConfirmModalData({ ...donor, documentType: 'membership' })}
             onOpenExcel={() => setActiveTab('excel')}
             onOpenHistory={() => setActiveTab('history')}
             onOpenOrgSettings={() => setIsOrgSettingsOpen(true)}
@@ -456,6 +478,7 @@ export default function App() {
           taxYear={confirmModalData.taxYear}
           donations={confirmModalData.donations}
           orgInfo={orgInfo}
+          documentType={confirmModalData.documentType || 'receipt'}
           onConfirmIssuance={handleConfirmIssuance}
           onViewExistingReceipt={(existing) => {
             setConfirmModalData(null);
