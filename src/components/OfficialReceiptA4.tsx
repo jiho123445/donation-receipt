@@ -48,8 +48,11 @@ export const OfficialReceiptA4 = React.forwardRef<HTMLDivElement, OfficialReceip
       String(a.date || a.period || '').localeCompare(String(b.date || b.period || ''))
     );
 
-    // Prepare table rows (standard 5 rows max on legal A4 layout)
-    const maxTableRows = 5;
+    // 기부내용 표시 줄 수: 월별(1~12월) 납부내역을 각각 한 줄씩 보여줄 수 있도록
+    // 연 최대 12줄까지 항목을 나눠서 표시합니다(실측 결과 12줄까지는 A4 한 페이지
+    // 여백 안에 정상적으로 들어갑니다). 12건을 초과하면 마지막 한 줄에 나머지를
+    // "외 N건(연간 합계)"로 합산해 표시합니다.
+    const maxTableRows = 12;
     type TableRowItem = {
       donationCode: string;
       dateText: string;
@@ -70,8 +73,9 @@ export const OfficialReceiptA4 = React.forwardRef<HTMLDivElement, OfficialReceip
         amount: d.amount,
       }));
     } else {
-      // First 4 items itemized
-      displayRows = sortedDonations.slice(0, 4).map((d) => ({
+      // 마지막 한 줄은 초과분 합계용으로 남겨두고, 나머지는 각각 한 줄씩 항목별로 표시합니다.
+      const itemizedCount = maxTableRows - 1;
+      displayRows = sortedDonations.slice(0, itemizedCount).map((d) => ({
         donationCode: d.donationCode || orgSnapshot?.donationCode || '40',
         dateText: d.date || d.period || issueDate || '-',
         content: d.content || orgSnapshot?.defaultContent || '후원금',
@@ -79,8 +83,8 @@ export const OfficialReceiptA4 = React.forwardRef<HTMLDivElement, OfficialReceip
         unitPrice: d.amount,
         amount: d.amount,
       }));
-      // 5th row summarizes the remaining items
-      const remainingItems = sortedDonations.slice(4);
+      // 마지막 줄에 초과분을 합산해서 표시합니다.
+      const remainingItems = sortedDonations.slice(itemizedCount);
       const remainingSum = remainingItems.reduce((s, d) => s + (d.amount || 0), 0);
       const firstDate = remainingItems[0]?.date || remainingItems[0]?.period || '';
       const lastDate = remainingItems[remainingItems.length - 1]?.date || remainingItems[remainingItems.length - 1]?.period || '';
