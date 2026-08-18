@@ -75,18 +75,29 @@ function findMatchingField(header: string): keyof typeof COLUMN_SYNONYMS | null 
 }
 
 function inferPeriodFromFileName(fileName: string): string {
-  const name = String(fileName || '').replace(/\s+/g, '');
+  return inferPeriodFromLabel(fileName);
+}
+
+/**
+ * 파일명 또는 시트 이름(예: "1월", "2026-03", "8월")에서 기간(YYYY-MM)을 추정합니다.
+ * 연도 정보가 없는 라벨(예: 시트명 "1월")은 fallbackYearPeriod(보통 파일명에서 추정한 연도)를
+ * 우선 사용하고, 그마저 없으면 현재 연도를 사용합니다.
+ */
+function inferPeriodFromLabel(label: string, fallbackYearPeriod?: string): string {
+  const name = String(label || '').replace(/\s+/g, '');
   let match = name.match(/(20\d{2})[-_.]?(0?[1-9]|1[0-2])월?/i);
   if (!match) match = name.match(/(20\d{2})년(0?[1-9]|1[0-2])월?/i);
   if (match) {
     return `${match[1]}-${String(Number(match[2])).padStart(2, '0')}`;
   }
 
-  // 파일명에 '8월', '7월'처럼 월만 있는 경우 현재 연도를 사용합니다.
+  // 라벨에 '8월', '7월'처럼 월만 있는 경우, 다른 곳(파일명 등)에서 이미 알아낸 연도가 있으면
+  // 그 연도를 사용하고, 없으면 현재 연도를 사용합니다.
   // 날짜가 없는 월별 회원자료를 관리하기 위한 보조값이며, 실제 후원일자가 있으면 그 날짜를 우선합니다.
   const monthOnly = name.match(/(?:^|[^0-9])(0?[1-9]|1[0-2])월(?:[^0-9]|$)/i);
   if (monthOnly) {
-    return `${new Date().getFullYear()}-${String(Number(monthOnly[1])).padStart(2, '0')}`;
+    const fallbackYear = fallbackYearPeriod?.match(/^(20\d{2})/)?.[1] || String(new Date().getFullYear());
+    return `${fallbackYear}-${String(Number(monthOnly[1])).padStart(2, '0')}`;
   }
 
   const compact = name.match(/(20\d{2})(0[1-9]|1[0-2])/);
@@ -223,22 +234,19 @@ export interface ParseResult {
   fileName: string;
 }
 
-export async function parseDonationExcel(file: File): Promise<ParseResult> {
-  const inferredPeriod = inferPeriodFromFileName(file.name);
-  const buffer = await file.arrayBuffer();
-  const fileHash = await computeFileHash(buffer);
-  const workbook = XLSX.read(buffer, { type: 'array', cellDates: false, cellFormula: true });
-  
-  if (workbook.SheetNames.length === 0) {
-    throw new Error('엑셀 파일에 시트가 존재하지 않습니다.');
-  }
+interface SheetParseOutcome {
+  records: RawDonationRecord[];
+  columnMapping: Record<string, string>;
+}
 
-  const firstSheet = workbook.Sheets[workbook.SheetNames[0]];
-  const rawJson: any[][] = XLSX.utils.sheet_to_json(firstSheet, { header: 1, defval: '', raw: false });
-
-  if (rawJson.length === 0) {
-    throw new Error('엑셀 파일이 비어있습니다.');
-  }
+/**
+ * 시트 하나(rawJson, header:1 형식)를 파싱해 후원 레코드 목록을 반환합니다.
+ * 이 시트에서 열 이름(성명/후원금액)을 전혀 인식하지 못하면 null을 반환합니다.
+ * (여러 시트가 있는 파일에서, 인식 실패한 시트 하나 때문에 전체 파일이 실패하지 않도록
+ *  호출하는 쪽에서 null인 시트는 건너뛰고 나머지 시트는 계속 처리합니다.)
+ */
+function parseSheetRows(rawJson: any[][], periodForSheet: string): SheetParseOutcome | null {
+  if (rawJson.length === 0) return null;
 
   // Find header row (usually row 0 or row with most matched keywords)
   let headerRowIndex = -1;
@@ -268,7 +276,7 @@ export async function parseDonationExcel(file: File): Promise<ParseResult> {
   }
 
   if (headerRowIndex === -1 || maxMatchedCount === 0) {
-    throw new Error('엑셀 열 이름을 인식할 수 없습니다. 최소한 성명과 후원금액 열이 포함되어 있는지 확인해주세요.');
+    return null;
   }
 
   // 안전장치: 같은 필드(예: amount)가 실수로 두 개 이상의 열에 매칭되면
@@ -291,7 +299,7 @@ export async function parseDonationExcel(file: File): Promise<ParseResult> {
 
   // 재단 표준 9열 서식은 헤더 인식이 일부 실패하더라도 위치로 안전하게 보완합니다.
   // A 성명 / B 주민(사업자)번호 / C 주소 / D 후원일자 / E 후원금액 / F 후원방법 / G 유형 / H 코드 / I 내용
-  if (headerRowIndex >= 0) {
+  {
     const standardPositions: Array<[number, keyof typeof COLUMN_SYNONYMS]> = [
       [0, 'donorName'], [1, 'idNumber'], [2, 'address'], [3, 'date'], [4, 'amount'],
       [5, 'paymentMethod'], [6, 'donationType'], [7, 'donationCode'], [8, 'content'],
@@ -305,13 +313,9 @@ export async function parseDonationExcel(file: File): Promise<ParseResult> {
 
   // 필수 데이터는 성명/후원금액만 사용합니다.
   // 주민/사업자번호, 주소, 후원일자, 후원방법, 기부금유형, 기부금코드, 기부내용은 선택 항목입니다.
-  // 후원일자가 없으면 파일명에서 YYYY년 M월 / YYYY-MM / YYYYMM 형식의 월을 추정해 period로 저장합니다.
   const mappedFields = Object.values(bestHeaderMap);
-  const missingRequired: string[] = [];
-  if (!mappedFields.includes('donorName')) missingRequired.push('성명 (이름/후원자명)');
-  if (!mappedFields.includes('amount')) missingRequired.push('후원금액 (후원금액/금액)');
-  if (missingRequired.length > 0) {
-    throw new Error(`필수 열이 없습니다: ${missingRequired.join(', ')}`);
+  if (!mappedFields.includes('donorName') || !mappedFields.includes('amount')) {
+    return null;
   }
 
   const records: RawDonationRecord[] = [];
@@ -324,20 +328,15 @@ export async function parseDonationExcel(file: File): Promise<ParseResult> {
       id: `rec-${Date.now()}-${r}-${Math.random().toString(36).substring(2, 6)}`,
       paymentMethod: '',
       content: '',
-      period: inferredPeriod || '',
+      period: periodForSheet || '',
       sourceRow: r + 1,
       // donationType / donationCode는 선택 항목입니다.
       // 값이 비어 있으면 undefined로 유지하여 영수증 발급 시 단체 기본값을 사용할 수 있게 합니다.
     };
 
-    let hasData = false;
-
     Object.entries(bestHeaderMap).forEach(([colIdxStr, fieldKey]) => {
       const colIdx = parseInt(colIdxStr, 10);
       const val = row[colIdx];
-      if (val !== undefined && val !== null && String(val).trim() !== '') {
-        hasData = true;
-      }
 
       const cellText = (() => {
         if (val === null || val === undefined) return '';
@@ -372,7 +371,7 @@ export async function parseDonationExcel(file: File): Promise<ParseResult> {
     });
 
     // 날짜가 비어 있어도 성명 + 금액이 있으면 업로드합니다.
-    // 월별 파일명(예: 2026년 8월.xlsx)에서 기간을 찾았다면 period에 저장합니다.
+    // 월별 파일명/시트명(예: "2026년 8월.xlsx", 시트 "8월")에서 기간을 찾았다면 period에 저장합니다.
     // 실제 후원일자가 입력된 경우에는 기존 날짜를 그대로 보존합니다.
     const validDate = !recordObj.date || /^\d{4}-\d{2}(-\d{2})?$/.test(recordObj.date);
     // 업로드 필수값은 성명 + 0보다 큰 후원금액뿐입니다.
@@ -414,7 +413,7 @@ export async function parseDonationExcel(file: File): Promise<ParseResult> {
           idNumber: idCol >= 0 ? String(row[idCol] ?? '').trim() : '',
           address: addrCol >= 0 ? String(row[addrCol] ?? '').trim() : '',
           date: dateCol >= 0 ? parseExcelDate(row[dateCol]) : '',
-          period: inferredPeriod || '',
+          period: periodForSheet || '',
           sourceRow: r + 1,
           amount,
           paymentMethod: '계좌이체',
@@ -438,7 +437,7 @@ export async function parseDonationExcel(file: File): Promise<ParseResult> {
         idNumber: String(row[1] ?? '').trim(),
         address: String(row[2] ?? '').trim(),
         date: parseExcelDate(row[3]),
-        period: inferredPeriod || '',
+        period: periodForSheet || '',
         sourceRow: r + 1,
         amount,
         paymentMethod: String(row[5] ?? '').trim() || '계좌이체',
@@ -449,16 +448,63 @@ export async function parseDonationExcel(file: File): Promise<ParseResult> {
     }
   }
 
-  const columnMappingSummary: Record<string, string> = {};
+  const columnMapping: Record<string, string> = {};
   Object.entries(bestHeaderMap).forEach(([colIdx, field]) => {
-    columnMappingSummary[String(rawJson[headerRowIndex][parseInt(colIdx, 10)])] = field;
+    columnMapping[String(rawJson[headerRowIndex][parseInt(colIdx, 10)])] = field;
   });
 
+  return { records, columnMapping };
+}
+
+export async function parseDonationExcel(file: File): Promise<ParseResult> {
+  const inferredPeriodFromFile = inferPeriodFromFileName(file.name);
+  const buffer = await file.arrayBuffer();
+  const fileHash = await computeFileHash(buffer);
+  const workbook = XLSX.read(buffer, { type: 'array', cellDates: false, cellFormula: true });
+
+  if (workbook.SheetNames.length === 0) {
+    throw new Error('엑셀 파일에 시트가 존재하지 않습니다.');
+  }
+
+  // 여러 시트(예: "1월"~"8월" 탭)가 있는 파일은, 시트마다 각각 후원자료를 담고 있는
+  // 월별 관리 파일일 수 있습니다. 이 경우 시트를 하나씩 모두 읽어서 결과를 누적합니다.
+  // (파일을 여러 개로 쪼개 올리지 않아도, 파일 하나 안의 모든 탭이 자동으로 합쳐집니다.)
+  const isMultiSheet = workbook.SheetNames.length > 1;
+  const allRecords: RawDonationRecord[] = [];
+  const columnMappingSummary: Record<string, string> = {};
+  let anySheetRecognized = false;
+
+  for (const sheetName of workbook.SheetNames) {
+    const sheet = workbook.Sheets[sheetName];
+    const rawJson: any[][] = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: '', raw: false });
+    if (rawJson.length === 0) continue; // 완전히 빈 시트는 조용히 건너뜁니다.
+
+    // 시트별 기간 추정: 파일명에서 기간을 찾았다면 그것을 기본으로 쓰되, 시트 이름 자체에
+    // 더 구체적인 월 정보(예: "3월")가 있으면 그 시트에는 시트별 기간을 우선 적용합니다.
+    const periodForSheet = isMultiSheet
+      ? inferPeriodFromLabel(sheetName, inferredPeriodFromFile) || inferredPeriodFromFile
+      : inferredPeriodFromFile;
+
+    const sheetOutcome = parseSheetRows(rawJson, periodForSheet);
+    if (!sheetOutcome) continue; // 이 시트는 열 이름을 인식하지 못했습니다 — 건너뛰고 나머지 시트는 계속 처리합니다.
+
+    anySheetRecognized = true;
+    allRecords.push(...sheetOutcome.records);
+    Object.entries(sheetOutcome.columnMapping).forEach(([k, v]) => {
+      // 시트가 여러 개면 어느 시트에서 인식된 열인지 알 수 있도록 시트명을 붙입니다.
+      columnMappingSummary[isMultiSheet ? `[${sheetName}] ${k}` : k] = v;
+    });
+  }
+
+  if (!anySheetRecognized) {
+    throw new Error('엑셀 열 이름을 인식할 수 없습니다. 최소한 성명과 후원금액 열이 포함되어 있는지 확인해주세요.');
+  }
+
   return {
-    records,
+    records: allRecords,
     columnMapping: columnMappingSummary,
-    missingRequired,
-    totalRows: records.length,
+    missingRequired: [],
+    totalRows: allRecords.length,
     fileHash,
     fileName: file.name,
   };
