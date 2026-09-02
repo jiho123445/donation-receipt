@@ -1,0 +1,17 @@
+# 의존성 패키지 (npm install로 자동 생성되므로 깃허브에는 올리지 않습니다)
+node_modules/
+
+# 빌드 결과물 (npm run build 실행 시 자동 생성)
+dist/
+dist-ssr/
+
+# 환경변수(비밀키) 파일 — 실수로 올리지 않도록 기본 차단
+.env
+.env.local
+.env.*.local
+
+# 에디터/OS 관련 파일
+.DS_Store
+*.log
+.vscode/*
+!.vscode/extensions.json

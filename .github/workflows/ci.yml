@@ -1,0 +1,35 @@
+name: 코드 오류 검사 (CI)
+
+# 언제 실행되는가:
+# - main 브랜치에 코드가 push(=깃허브 웹 업로드로 "Commit changes"를 누르는 것 포함)될 때
+# - main 브랜치로 들어오는 Pull Request가 생성/수정될 때
+# 즉, "업로드를 막는 기능"이 아니라 "업로드된 코드에 문제가 없는지 자동으로 검사해서 알려주는 기능"입니다.
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch: {}
+
+jobs:
+  check:
+    name: 빌드 및 타입 오류 검사
+    runs-on: ubuntu-latest
+    steps:
+      - name: 저장소 코드 가져오기
+        uses: actions/checkout@v4
+
+      - name: Node.js 설치
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: 패키지 설치
+        run: npm ci
+
+      - name: 타입(문법) 오류 검사
+        run: npm run lint
+
+      - name: 실제 배포용 빌드 검사
+        run: npm run build
