@@ -1,10 +1,10 @@
 import React from 'react';
-import { Building2, FileText, Settings, Printer, AlertTriangle, Wallet, Award, LayoutDashboard } from 'lucide-react';
+import { Building2, FileText, Settings, Printer, AlertTriangle, Wallet, Award, LayoutDashboard, WalletCards, UserCog } from 'lucide-react';
 import { OrganizationInfo } from '../types/donation';
 
 interface HeaderProps {
-  activeTab: 'dashboard' | 'dashboard' | 'search' | 'membership' | 'history' | 'awards' | 'settings' | 'print';
-  setActiveTab: (tab: 'dashboard' | 'dashboard' | 'search' | 'membership' | 'history' | 'awards' | 'settings' | 'print') => void;
+  activeTab: 'dashboard' | 'feeStatus' | 'search' | 'membership' | 'history' | 'awards' | 'members' | 'settings' | 'print';
+  setActiveTab: (tab: 'dashboard' | 'feeStatus' | 'search' | 'membership' | 'history' | 'awards' | 'members' | 'settings' | 'print') => void;
   orgInfo: OrganizationInfo;
   donorCount?: number;
   recordCount?: number;
@@ -73,6 +73,7 @@ export const Header: React.FC<HeaderProps> = ({
         <div className="flex items-center justify-between border-t border-slate-100">
           <nav className="flex space-x-1 py-1.5" aria-label="메인 메뉴">
             <button onClick={() => setActiveTab('dashboard')} className={`flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-md transition-all cursor-pointer ${activeTab === 'dashboard' ? 'bg-blue-900 text-white shadow-xs' : 'text-slate-700 hover:bg-slate-100 hover:text-slate-900'}`}><LayoutDashboard className="w-4 h-4"/><span>통합현황</span></button>
+            <button onClick={() => setActiveTab('feeStatus')} className={`flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-md transition-all cursor-pointer ${activeTab === 'feeStatus' ? 'bg-blue-900 text-white shadow-xs' : 'text-slate-700 hover:bg-slate-100 hover:text-slate-900'}`}><WalletCards className="w-4 h-4"/><span>회비·미납관리</span></button>
             <button
               onClick={() => {
                 setActiveTab('search');
@@ -111,6 +112,8 @@ export const Header: React.FC<HeaderProps> = ({
               <FileText className="w-4 h-4" />
               <span>발급내역 관리</span>
             </button>
+
+            <button onClick={() => setActiveTab('members')} className={`flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-md transition-all cursor-pointer ${activeTab === 'members' ? 'bg-blue-900 text-white shadow-xs' : 'text-slate-700 hover:bg-slate-100 hover:text-slate-900'}`}><UserCog className="w-4 h-4"/><span>회원관리</span></button>
 
             <button
               onClick={() => setActiveTab('awards')}

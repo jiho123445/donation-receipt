@@ -4,6 +4,7 @@ import { AlertCircle, CheckCircle2, Cloud, RefreshCw, X } from 'lucide-react';
 import { auth, firebaseConfigured, firebaseConfig } from './firebase';
 import {
   RawDonationRecord,
+  MemberRecord,
   OrganizationInfo,
   IssuedReceiptRecord,
   PrintSettings,
@@ -30,6 +31,8 @@ import { IssuanceHistory } from './components/IssuanceHistory';
 import { ExcelManager } from './components/ExcelManager';
 import { AwardManager } from './components/AwardManager';
 import { ManagementDashboard } from './components/ManagementDashboard';
+import { MembershipStatusManager } from './components/MembershipStatusManager';
+import { MemberManager } from './components/MemberManager';
 import { OrgSettingsModal } from './components/OrgSettingsModal';
 import { PrintSettingsModal } from './components/PrintSettingsModal';
 import { IssuanceConfirmModal } from './components/IssuanceConfirmModal';
@@ -39,6 +42,7 @@ import { LoginScreen } from './components/LoginScreen';
 import { INITIAL_SAMPLE_DONATIONS } from './utils/sampleData';
 import { mergeDonationRecords } from './utils/donationDedup';
 import { mergeAwardRecords } from './utils/awardDedup';
+import { normalizeAwardRecord } from './utils/awardCompatibility';
 import { INITIAL_SAMPLE_AWARDS } from './utils/awardSeedData';
 import {
   loadCloudOrganization,
@@ -48,6 +52,9 @@ import {
   deleteAllCloudDonations,
   deleteAllImportedFileRecords,
   loadCloudAwards,
+  loadCloudMembers,
+  saveCloudMember,
+  deleteCloudMember,
   batchSaveCloudAwards,
   deleteAllCloudAwards,
   saveCloudOrganization,
@@ -69,7 +76,7 @@ export default function App() {
   const [showStatusBanner, setShowStatusBanner] = useState(true);
 
   // Navigation
-  const [activeTab, setActiveTab] = useState<'dashboard' | 'search' | 'membership' | 'history' | 'awards' | 'settings' | 'print'>('dashboard');
+  const [activeTab, setActiveTab] = useState<'dashboard' | 'feeStatus' | 'search' | 'membership' | 'history' | 'awards' | 'members' | 'settings' | 'print'>('dashboard');
   const [searchResetKey, setSearchResetKey] = useState<number>(0);
 
   const handleResetSearch = () => {
@@ -79,6 +86,7 @@ export default function App() {
   // Core Data
   // 실제 후원자료는 항상 Firebase(또는 명시적으로 업로드한 Excel)를 원본으로 사용합니다.
   // 샘플자료는 사용자가 '샘플 데이터 불러오기'를 눌렀을 때만 로드합니다.
+  const [members, setMembers] = useState<MemberRecord[]>([]);
   const [donations, setDonations] = useState<RawDonationRecord[]>([]);
   // 회원 표창(수상) 내역 — 첨부된 표창명단(PDF/엑셀)을 성명+연도+수상내역 단위로 정규화해 보관합니다.
   // donations와 동일하게 로그인 시 Firebase(awards 컬렉션)를 원본으로 사용하며 localStorage에는 저장하지 않습니다.
@@ -135,11 +143,12 @@ export default function App() {
         return;
       }
       try {
-        const [cloudOrg, cloudReceipts, cloudDonations, cloudAwards] = await Promise.all([
+        const [cloudOrg, cloudReceipts, cloudDonations, cloudAwards, cloudMembers] = await Promise.all([
           loadCloudOrganization(),
           loadCloudReceipts(),
           loadCloudDonations(),
           loadCloudAwards(),
+        loadCloudMembers(),
         ]);
         if (cloudOrg) {
           setOrgInfo(cloudOrg);
@@ -165,13 +174,11 @@ export default function App() {
           content: String(d.content || '').trim(),
         }));
         setDonations(normalizedCloudDonations);
-        const normalizedCloudAwards = cloudAwards.map((a, index) => ({
-          ...a,
-          id: a.id || `cloud-award-${index}-${Date.now()}`,
-          recipientName: String(a.recipientName || '').trim(),
-          awardName: String(a.awardName || '').trim(),
-          year: Number(a.year) || new Date().getFullYear(),
-        }));
+        // 기존 awards 컬렉션은 연도/성명/수상명이 여러 필드명으로 저장된 자료가 있어
+        // 호환 정규화를 적용합니다. 연도를 알 수 없는 자료를 현재 연도로 임의 변경하지 않습니다.
+        const normalizedCloudAwards = cloudAwards.map((a, index) =>
+          normalizeAwardRecord(a as unknown as Record<string, unknown>, a.id || `cloud-award-${index}-${Date.now()}`)
+        );
         setAwards(normalizedCloudAwards);
         setFirestoreStatus({
           connected: true,
@@ -463,6 +470,8 @@ export default function App() {
 
         {/* Tab 1: Search & Issue Receipt */}
         {activeTab === 'dashboard' && <ManagementDashboard donations={donations} awards={awards} />}
+        {activeTab === 'feeStatus' && <MembershipStatusManager donations={donations} />}
+        {activeTab === 'members' && <MemberManager members={members} donations={donations} awards={awards} onSave={async (m)=>{await saveCloudMember(m); setMembers(prev=>{const i=prev.findIndex(x=>x.id===m.id); return i>=0?prev.map(x=>x.id===m.id?m:x):[...prev,m];});}} onDelete={async (id)=>{await deleteCloudMember(id); setMembers(prev=>prev.filter(m=>m.id!==id));}} />}
 
         {activeTab === 'search' && (
           <DonorSearch

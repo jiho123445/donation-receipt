@@ -19,6 +19,7 @@ import type {
   AuditLogRecord,
 } from '../types/donation';
 import { db } from '../firebase';
+import { normalizeAwardRecord } from './awardCompatibility';
 
 export interface FirestoreConnectionStatus {
   connected: boolean;
@@ -286,10 +287,12 @@ export async function deleteAllImportedFileRecords(): Promise<number> {
 export async function loadCloudAwards(): Promise<AwardRecord[]> {
   try {
     const snap = await getDocs(collection(requireDb(), 'awards'));
-    return snap.docs.map((d) => ({
-      id: d.id,
-      ...(d.data() as Omit<AwardRecord, 'id'>),
-    }));
+    return snap.docs.map((d) =>
+      normalizeAwardRecord(
+        { id: d.id, ...(d.data() as Record<string, unknown>) },
+        d.id
+      )
+    );
   } catch (error) {
     console.error('loadCloudAwards error:', error);
     throw error;
@@ -422,4 +425,18 @@ export async function saveAuditLog(log: Omit<AuditLogRecord, 'id' | 'createdAt'>
   };
   await setDoc(ref, stripUndefined(payload));
   return ref.id;
+}
+
+// ===== 회원 마스터 관리 =====
+export async function loadCloudMembers(): Promise<import('../types/donation').MemberRecord[]> {
+  const snapshot = await getDocs(collection(requireDb(), 'members'));
+  return snapshot.docs.map(d => ({ id: d.id, ...(d.data() as Omit<import('../types/donation').MemberRecord,'id'>) }));
+}
+export async function saveCloudMember(member: import('../types/donation').MemberRecord): Promise<void> {
+  const ref = doc(requireDb(), 'members', member.id);
+  await setDoc(ref, stripUndefined(member));
+}
+export async function deleteCloudMember(id: string): Promise<void> {
+  const { deleteDoc } = await import('firebase/firestore');
+  await deleteDoc(doc(requireDb(), 'members', id));
 }
