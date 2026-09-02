@@ -29,6 +29,7 @@ import { DonorSearch } from './components/DonorSearch';
 import { IssuanceHistory } from './components/IssuanceHistory';
 import { ExcelManager } from './components/ExcelManager';
 import { AwardManager } from './components/AwardManager';
+import { ManagementDashboard } from './components/ManagementDashboard';
 import { OrgSettingsModal } from './components/OrgSettingsModal';
 import { PrintSettingsModal } from './components/PrintSettingsModal';
 import { IssuanceConfirmModal } from './components/IssuanceConfirmModal';
@@ -68,7 +69,7 @@ export default function App() {
   const [showStatusBanner, setShowStatusBanner] = useState(true);
 
   // Navigation
-  const [activeTab, setActiveTab] = useState<'search' | 'membership' | 'history' | 'awards' | 'settings' | 'print'>('search');
+  const [activeTab, setActiveTab] = useState<'dashboard' | 'search' | 'membership' | 'history' | 'awards' | 'settings' | 'print'>('dashboard');
   const [searchResetKey, setSearchResetKey] = useState<number>(0);
 
   const handleResetSearch = () => {
@@ -461,6 +462,8 @@ export default function App() {
       <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6">
 
         {/* Tab 1: Search & Issue Receipt */}
+        {activeTab === 'dashboard' && <ManagementDashboard donations={donations} awards={awards} />}
+
         {activeTab === 'search' && (
           <DonorSearch
             key={searchResetKey}

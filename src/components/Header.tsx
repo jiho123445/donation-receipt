@@ -1,10 +1,10 @@
 import React from 'react';
-import { Building2, FileText, Settings, Printer, AlertTriangle, Wallet, Award } from 'lucide-react';
+import { Building2, FileText, Settings, Printer, AlertTriangle, Wallet, Award, LayoutDashboard } from 'lucide-react';
 import { OrganizationInfo } from '../types/donation';
 
 interface HeaderProps {
-  activeTab: 'search' | 'membership' | 'history' | 'awards' | 'settings' | 'print';
-  setActiveTab: (tab: 'search' | 'membership' | 'history' | 'awards' | 'settings' | 'print') => void;
+  activeTab: 'dashboard' | 'dashboard' | 'search' | 'membership' | 'history' | 'awards' | 'settings' | 'print';
+  setActiveTab: (tab: 'dashboard' | 'dashboard' | 'search' | 'membership' | 'history' | 'awards' | 'settings' | 'print') => void;
   orgInfo: OrganizationInfo;
   donorCount?: number;
   recordCount?: number;
@@ -72,6 +72,7 @@ export const Header: React.FC<HeaderProps> = ({
         {/* Primary Navigation Tabs */}
         <div className="flex items-center justify-between border-t border-slate-100">
           <nav className="flex space-x-1 py-1.5" aria-label="메인 메뉴">
+            <button onClick={() => setActiveTab('dashboard')} className={`flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-md transition-all cursor-pointer ${activeTab === 'dashboard' ? 'bg-blue-900 text-white shadow-xs' : 'text-slate-700 hover:bg-slate-100 hover:text-slate-900'}`}><LayoutDashboard className="w-4 h-4"/><span>통합현황</span></button>
             <button
               onClick={() => {
                 setActiveTab('search');

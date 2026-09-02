@@ -96,12 +96,53 @@ export interface PrintSettings {
  * 가로로 나열된 명단(엑셀/PDF)을 세로 레코드 하나(연도 1개 + 수상내역 1건)로 정규화한 형태입니다.
  * 주민번호 등 식별번호가 없는 명단이므로 원칙적으로 "성명" 기준으로 조회합니다.
  */
+export type MemberStatus = 'active' | 'inactive' | 'withdrawn' | 'exempt';
+export type MemberType = 'regular' | 'executive' | 'sponsor' | 'honorary';
+
+/** 상업용 회원관리 확장을 위한 회원 마스터. 기존 DonorRecord와 호환되도록 별도 컬렉션 members에 저장합니다. */
+export interface MemberRecord {
+  id: string;
+  memberNo: string;
+  name: string;
+  donorId?: string;
+  status: MemberStatus;
+  memberType: MemberType;
+  joinDate?: string;
+  leaveDate?: string;
+  feePolicy?: string;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+/**
+ * 회원 표창(수상) 내역 1건.
+ * memberId를 우선 연결하고, 기존 성명 기반 자료는 recipientName으로 하위 호환합니다.
+ */
 export interface AwardRecord {
   id: string;
-  recipientName: string; // 성명
-  memberNo?: string; // 연번(원본 명단의 번호, 참고용)
-  year: number; // 수상연도 (표의 연도 컬럼, 예: 2024)
-  awardName: string; // 수상내역 (예: "2023년 송년회 도의회의장상")
-  sourceLabel?: string; // 원본 출처(예: 파일명 또는 "2024년 표창명단") — 참고/디버깅용
-  sourceRow?: number; // 원본 표의 행 번호(참고용)
+  memberId?: string; // members 컬렉션의 고유 ID (신규/정정 자료는 반드시 연결 권장)
+  recipientName: string;
+  memberNo?: string;
+  year: number;
+  awardName: string;
+  awardOrganization?: string;
+  awardDate?: string;
+  awardCategory?: string;
+  eventName?: string;
+  sourceLabel?: string;
+  sourceRow?: number;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+export interface AuditLogRecord {
+  id?: string;
+  actorUid: string;
+  action: 'CREATE' | 'UPDATE' | 'DELETE' | 'IMPORT' | 'EXPORT';
+  collectionName: string;
+  documentId?: string;
+  summary: string;
+  before?: Record<string, unknown>;
+  after?: Record<string, unknown>;
+  createdAt: string;
 }

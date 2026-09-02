@@ -16,6 +16,7 @@ import type {
   RawDonationRecord,
   DonorRecord,
   AwardRecord,
+  AuditLogRecord,
 } from '../types/donation';
 import { db } from '../firebase';
 
@@ -403,4 +404,22 @@ export async function loadCloudOrganization(): Promise<OrganizationInfo | null> 
 
 export async function saveCloudOrganization(info: OrganizationInfo): Promise<void> {
   await setDoc(doc(requireDb(), 'organizations', 'main'), info, { merge: true });
+}
+
+
+/* ==========================================================================
+   6. auditLogs 컬렉션: 변경 이력
+   Firestore Rules에서 일반 사용자의 직접 접근을 막고 관리자 서버/관리자 UI만
+   기록하도록 확장할 수 있는 호환용 함수입니다.
+   ========================================================================== */
+export async function saveAuditLog(log: Omit<AuditLogRecord, 'id' | 'createdAt'> & { createdAt?: string }): Promise<string> {
+  const firestore = requireDb();
+  const ref = doc(collection(firestore, 'auditLogs'));
+  const payload: AuditLogRecord = {
+    ...log,
+    id: ref.id,
+    createdAt: log.createdAt || new Date().toISOString(),
+  };
+  await setDoc(ref, stripUndefined(payload));
+  return ref.id;
 }

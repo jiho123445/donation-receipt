@@ -2,53 +2,29 @@ rules_version = '2';
 
 service cloud.firestore {
   match /databases/{database}/documents {
-    function signedIn() {
-      return request.auth != null;
+    function signedIn() { return request.auth != null; }
+    function isAdmin() {
+      return signedIn() && request.auth.token.admin == true;
+    }
+    function isSuperAdmin() {
+      return signedIn() && request.auth.token.super_admin == true;
     }
 
-    // 1. 단체 기본정보
-    match /organizations/{orgId} {
-      allow read, write: if signedIn();
-    }
+    match /organizations/{orgId} { allow read: if signedIn(); allow create, update: if isAdmin(); allow delete: if isSuperAdmin(); }
+    match /donors/{donorId} { allow read: if signedIn(); allow create, update: if isAdmin(); allow delete: if isSuperAdmin(); }
+    match /members/{memberId} { allow read: if signedIn(); allow create, update: if isAdmin(); allow delete: if isSuperAdmin(); }
+    match /donations/{donationId} { allow read: if signedIn(); allow create, update: if isAdmin(); allow delete: if isSuperAdmin(); }
+    match /membershipPayments/{paymentId} { allow read: if signedIn(); allow create, update: if isAdmin(); allow delete: if isSuperAdmin(); }
+    match /awards/{awardId} { allow read: if signedIn(); allow create, update: if isAdmin(); allow delete: if isSuperAdmin(); }
+    match /receipts/{receiptId} { allow read: if signedIn(); allow create, update: if isAdmin(); allow delete: if isSuperAdmin(); }
+    match /issuedReceipts/{receiptId} { allow read: if signedIn(); allow create, update: if isAdmin(); allow delete: if isSuperAdmin(); }
+    match /counters/{taxYear} { allow read: if signedIn(); allow create, update: if isAdmin(); allow delete: if isSuperAdmin(); }
+    match /importedFiles/{fileHash} { allow read: if signedIn(); allow create, update: if isAdmin(); allow delete: if isSuperAdmin(); }
 
-    // 2. 후원자 기본정보 컬렉션
-    match /donors/{donorId} {
-      allow read, write: if signedIn();
-    }
+    // 감사로그는 클라이언트 변조를 방지하기 위해 직접 읽기/쓰기 차단.
+    // 필요 시 Cloud Functions/Admin SDK로 기록하세요.
+    match /auditLogs/{logId} { allow read: if isSuperAdmin(); allow write: if false; }
 
-    // 3. 후원금 납부내역 컬렉션
-    match /donations/{donationId} {
-      allow read, write: if signedIn();
-    }
-
-    // 4. 발급된 기부금영수증 기록 컬렉션
-    match /receipts/{receiptId} {
-      allow read, write: if signedIn();
-    }
-
-    // 하위 호환성 유지용 issuedReceipts 컬렉션
-    match /issuedReceipts/{receiptId} {
-      allow read, write: if signedIn();
-    }
-
-    // 영수증 일련번호 카운터
-    match /counters/{taxYear} {
-      allow read, write: if signedIn();
-    }
-
-    // 5. 이미 가져온 엑셀 파일 목록 (파일 해시 기준 재업로드 확인용)
-    match /importedFiles/{fileHash} {
-      allow read, write: if signedIn();
-    }
-
-    // 6. 회원 표창(수상) 내역 컬렉션
-    match /awards/{awardId} {
-      allow read, write: if signedIn();
-    }
-
-    // 기본 차단 규칙
-    match /{document=**} {
-      allow read, write: if false;
-    }
+    match /{document=**} { allow read, write: if false; }
   }
 }
