@@ -193,10 +193,11 @@ export async function batchSaveCloudDonations(donations: RawDonationRecord[]): P
 async function deleteAllDocsInCollection(collectionPath: string): Promise<number> {
   const firestore = requireDb();
   let deleted = 0;
+  const MAX_ATTEMPTS = 8;
 
-  for (let attempt = 0; attempt < 5; attempt++) {
+  for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
     const snap = await getDocs(collection(firestore, collectionPath));
-    if (snap.empty) break;
+    if (snap.empty) return deleted;
 
     const docs = snap.docs;
     for (let i = 0; i < docs.length; i += 400) {
@@ -206,6 +207,17 @@ async function deleteAllDocsInCollection(collectionPath: string): Promise<number
       await batch.commit();
       deleted += chunk.length;
     }
+  }
+
+  // 여기까지 왔다는 건 MAX_ATTEMPTS번을 반복해서 지워도 계속 문서가 남아있다는
+  // 뜻입니다. 정상적인 상황이 아니므로("완료됐다"고 조용히 넘어가지 않고)
+  // 실제로 몇 건이 남아있는지 마지막으로 다시 확인해서 명확한 오류로 알려줍니다.
+  // (예: 다른 탭/기기에서 동시에 같은 파일을 업로드하고 있는 경우 등)
+  const finalCheck = await getDocs(collection(firestore, collectionPath));
+  if (!finalCheck.empty) {
+    throw new Error(
+      `"${collectionPath}" 컬렉션을 ${MAX_ATTEMPTS}번 반복해서 삭제를 시도했지만, 여전히 ${finalCheck.size.toLocaleString()}건이 남아있습니다. 다른 브라우저 탭이나 다른 사람이 동시에 같은 자료를 업로드하고 있지 않은지 확인 후 다시 시도해주세요.`
+    );
   }
 
   return deleted;

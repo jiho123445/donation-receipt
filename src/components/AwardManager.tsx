@@ -69,6 +69,9 @@ export const AwardManager: React.FC<AwardManagerProps> = ({
   );
 
   const handleFiles = async (files: FileList | File[]) => {
+    // 처리 중에 같은 파일을 또 클릭/드롭하면 자료가 두 배로 쌓일 수 있어, 처리 중에는 무시합니다.
+    if (isProcessing) return;
+
     const selectedFiles = Array.from(files).filter((file) => /\.(xlsx|xls|pdf)$/i.test(file.name));
     if (selectedFiles.length === 0) {
       setErrorMessage('Excel 파일(.xlsx, .xls) 또는 PDF 파일(.pdf)만 업로드할 수 있습니다.');
@@ -123,6 +126,7 @@ export const AwardManager: React.FC<AwardManagerProps> = ({
   const handleDrop = (e: React.DragEvent) => {
     e.preventDefault();
     setIsDragging(false);
+    if (isProcessing) return;
     if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
       handleFiles(e.dataTransfer.files);
     }
@@ -300,18 +304,24 @@ export const AwardManager: React.FC<AwardManagerProps> = ({
         }}
         onDragLeave={() => setIsDragging(false)}
         onDrop={handleDrop}
-        className={`border-2 border-dashed rounded-xl p-8 text-center transition-all bg-white cursor-pointer ${
-          isDragging
-            ? 'border-blue-700 bg-blue-50/50 scale-[1.005]'
-            : 'border-slate-300 hover:border-blue-800 hover:bg-slate-50/50'
+        className={`border-2 border-dashed rounded-xl p-8 text-center transition-all bg-white ${
+          isProcessing
+            ? 'opacity-60 cursor-not-allowed'
+            : isDragging
+              ? 'border-blue-700 bg-blue-50/50 scale-[1.005] cursor-pointer'
+              : 'border-slate-300 hover:border-blue-800 hover:bg-slate-50/50 cursor-pointer'
         }`}
-        onClick={() => fileInputRef.current?.click()}
+        onClick={() => {
+          if (isProcessing) return;
+          fileInputRef.current?.click();
+        }}
       >
         <input
           type="file"
           ref={fileInputRef}
           accept=".xlsx, .xls, .pdf"
           multiple
+          disabled={isProcessing}
           className="hidden"
           onChange={(e) => {
             if (e.target.files && e.target.files.length > 0) {

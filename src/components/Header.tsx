@@ -1,10 +1,10 @@
 import React from 'react';
-import { Building2, FileText, Settings, Upload, Printer, AlertTriangle, Wallet, Award } from 'lucide-react';
+import { Building2, FileText, Settings, Printer, AlertTriangle, Wallet, Award } from 'lucide-react';
 import { OrganizationInfo } from '../types/donation';
 
 interface HeaderProps {
-  activeTab: 'search' | 'membership' | 'history' | 'excel' | 'awards' | 'settings' | 'print';
-  setActiveTab: (tab: 'search' | 'membership' | 'history' | 'excel' | 'awards' | 'settings' | 'print') => void;
+  activeTab: 'search' | 'membership' | 'history' | 'awards' | 'settings' | 'print';
+  setActiveTab: (tab: 'search' | 'membership' | 'history' | 'awards' | 'settings' | 'print') => void;
   orgInfo: OrganizationInfo;
   donorCount?: number;
   recordCount?: number;
@@ -109,18 +109,6 @@ export const Header: React.FC<HeaderProps> = ({
             >
               <FileText className="w-4 h-4" />
               <span>발급내역 관리</span>
-            </button>
-
-            <button
-              onClick={() => setActiveTab('excel')}
-              className={`flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-md transition-all cursor-pointer ${
-                activeTab === 'excel'
-                  ? 'bg-blue-900 text-white shadow-xs'
-                  : 'text-slate-700 hover:bg-slate-100 hover:text-slate-900'
-              }`}
-            >
-              <Upload className="w-4 h-4" />
-              <span>엑셀 회원 명단 관리</span>
             </button>
 
             <button

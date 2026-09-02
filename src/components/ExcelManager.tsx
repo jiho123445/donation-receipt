@@ -88,6 +88,11 @@ export const ExcelManager: React.FC<ExcelManagerProps> = ({
   };
 
   const handleFiles = async (files: FileList | File[]) => {
+    // 이미 처리 중일 때 같은 파일을 또 클릭/드롭하면(느린 네트워크에서 반응이 없어 보여
+    // 다시 누르는 경우 등), 같은 파일이 두 번 동시에 처리되면서 자료가 두 배로
+    // 쌓일 수 있습니다. 처리 중에는 새로운 요청을 무시합니다.
+    if (isProcessing) return;
+
     const selectedFiles = Array.from(files).filter((file) => /\.(xlsx|xls)$/i.test(file.name));
     if (selectedFiles.length === 0) {
       setErrorMessage('Excel 파일(.xlsx 또는 .xls)만 업로드할 수 있습니다.');
@@ -153,6 +158,7 @@ export const ExcelManager: React.FC<ExcelManagerProps> = ({
   const handleDrop = (e: React.DragEvent) => {
     e.preventDefault();
     setIsDragging(false);
+    if (isProcessing) return;
     if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
       handleFiles(e.dataTransfer.files);
     }
@@ -197,18 +203,24 @@ export const ExcelManager: React.FC<ExcelManagerProps> = ({
         }}
         onDragLeave={() => setIsDragging(false)}
         onDrop={handleDrop}
-        className={`border-2 border-dashed rounded-xl p-8 text-center transition-all bg-white cursor-pointer ${
-          isDragging
-            ? 'border-blue-700 bg-blue-50/50 scale-[1.005]'
-            : 'border-slate-300 hover:border-blue-800 hover:bg-slate-50/50'
+        className={`border-2 border-dashed rounded-xl p-8 text-center transition-all bg-white ${
+          isProcessing
+            ? 'opacity-60 cursor-not-allowed'
+            : isDragging
+              ? 'border-blue-700 bg-blue-50/50 scale-[1.005] cursor-pointer'
+              : 'border-slate-300 hover:border-blue-800 hover:bg-slate-50/50 cursor-pointer'
         }`}
-        onClick={() => fileInputRef.current?.click()}
+        onClick={() => {
+          if (isProcessing) return;
+          fileInputRef.current?.click();
+        }}
       >
         <input
           type="file"
           ref={fileInputRef}
           accept=".xlsx, .xls"
           multiple
+          disabled={isProcessing}
           className="hidden"
           onChange={(e) => {
             if (e.target.files && e.target.files.length > 0) {
@@ -218,11 +230,11 @@ export const ExcelManager: React.FC<ExcelManagerProps> = ({
         />
 
         <div className="w-14 h-14 mx-auto rounded-full bg-blue-100 text-blue-900 flex items-center justify-center mb-3 shadow-xs">
-          <Upload className="w-7 h-7" />
+          {isProcessing ? <RefreshCw className="w-7 h-7 animate-spin" /> : <Upload className="w-7 h-7" />}
         </div>
 
         <h3 className="text-base font-bold text-slate-900">
-          {isProcessing ? '엑셀 파일을 분석하는 중입니다...' : '엑셀 파일을 여러 개 선택하거나 마우스로 끌어다 놓으세요'}
+          {isProcessing ? '엑셀 파일을 분석하는 중입니다... (처리 중에는 다시 누르지 마세요)' : '엑셀 파일을 여러 개 선택하거나 마우스로 끌어다 놓으세요'}
         </h3>
         <p className="text-xs text-slate-500 mt-1">
           또는 클릭하여 .xlsx / .xls 파일을 여러 개 선택할 수 있습니다.

@@ -68,7 +68,7 @@ export default function App() {
   const [showStatusBanner, setShowStatusBanner] = useState(true);
 
   // Navigation
-  const [activeTab, setActiveTab] = useState<'search' | 'membership' | 'history' | 'excel' | 'awards' | 'settings' | 'print'>('search');
+  const [activeTab, setActiveTab] = useState<'search' | 'membership' | 'history' | 'awards' | 'settings' | 'print'>('search');
   const [searchResetKey, setSearchResetKey] = useState<number>(0);
 
   const handleResetSearch = () => {
@@ -469,7 +469,7 @@ export default function App() {
             orgInfo={orgInfo}
             documentType="receipt"
             onStartIssuance={(donor) => setConfirmModalData({ ...donor, documentType: 'receipt' })}
-            onOpenExcel={() => setActiveTab('excel')}
+            onOpenExcel={() => setActiveTab('membership')}
             onOpenHistory={() => setActiveTab('history')}
             onOpenOrgSettings={() => setIsOrgSettingsOpen(true)}
             onOpenPrintSettings={() => setIsPrintSettingsOpen(true)}
@@ -478,22 +478,41 @@ export default function App() {
           />
         )}
 
-        {/* Tab 1b: Search & Issue Membership-fee Confirmation */}
+        {/* Tab 1b: Search & Issue Membership-fee Confirmation
+            (v23: 별도였던 "엑셀 회원 명단 관리" 탭을 없애고, 수상내역 관리 탭과 같은 방식으로
+             이 화면 안에 검색과 엑셀 업로드/관리를 함께 둡니다. 후원내역(donations)은
+             "영수증 발급" 탭과 완전히 같은 자료를 공유하므로, 영수증 발급 화면의
+             "회원 자료 명단" 버튼을 누르면 이 탭으로 이동해 관리할 수 있습니다.) */}
         {activeTab === 'membership' && (
-          <DonorSearch
-            key={`membership-${searchResetKey}`}
-            donations={donations}
-            awards={awards}
-            orgInfo={orgInfo}
-            documentType="membership"
-            onStartIssuance={(donor) => setConfirmModalData({ ...donor, documentType: 'membership' })}
-            onOpenExcel={() => setActiveTab('excel')}
-            onOpenHistory={() => setActiveTab('history')}
-            onOpenOrgSettings={() => setIsOrgSettingsOpen(true)}
-            onOpenPrintSettings={() => setIsPrintSettingsOpen(true)}
-            onOpenAwards={() => setActiveTab('awards')}
-            onResetSearch={handleResetSearch}
-          />
+          <div className="space-y-6">
+            <DonorSearch
+              key={`membership-${searchResetKey}`}
+              donations={donations}
+              awards={awards}
+              orgInfo={orgInfo}
+              documentType="membership"
+              onStartIssuance={(donor) => setConfirmModalData({ ...donor, documentType: 'membership' })}
+              onOpenExcel={() =>
+                document.getElementById('excel-manager-section')?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+              }
+              onOpenHistory={() => setActiveTab('history')}
+              onOpenOrgSettings={() => setIsOrgSettingsOpen(true)}
+              onOpenPrintSettings={() => setIsPrintSettingsOpen(true)}
+              onOpenAwards={() => setActiveTab('awards')}
+              onResetSearch={handleResetSearch}
+            />
+
+            <div id="excel-manager-section">
+              <ExcelManager
+                donations={donations}
+                onUpdateDonations={handleUpdateDonations}
+                onClearDonations={handleClearDonations}
+                onLoadSample={() => setDonations(INITIAL_SAMPLE_DONATIONS)}
+                onCheckFileImported={handleCheckFileImported}
+                onRecordFileImport={handleRecordFileImport}
+              />
+            </div>
+          </div>
         )}
 
         {/* Tab 2: Issuance Records History */}
@@ -502,18 +521,6 @@ export default function App() {
             receipts={issuedReceipts}
             onSelectReceipt={(receipt) => setPreviewReceipt(receipt)}
             onCancelReceipt={handleCancelReceipt}
-          />
-        )}
-
-        {/* Tab 3: Excel Upload & Management */}
-        {activeTab === 'excel' && (
-          <ExcelManager
-            donations={donations}
-            onUpdateDonations={handleUpdateDonations}
-            onClearDonations={handleClearDonations}
-            onLoadSample={() => setDonations(INITIAL_SAMPLE_DONATIONS)}
-            onCheckFileImported={handleCheckFileImported}
-            onRecordFileImport={handleRecordFileImport}
           />
         )}
 
