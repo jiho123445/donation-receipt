@@ -9,8 +9,8 @@
 /* Print Specific Styles for A4 Legal Form */
 @media print {
   @page {
-    size: A4 portrait;
-    margin: 0;
+    size: 210mm 297mm;
+    margin: 8mm 6mm;
   }
 
   html, body {
@@ -40,8 +40,7 @@
     left: 0 !important;
     top: 0 !important;
     width: 210mm !important;
-    height: 297mm !important;
-    margin: 0 !important;
+    margin: 0 auto !important;
     padding: 0 !important;
     box-shadow: none !important;
     background: #ffffff !important;
