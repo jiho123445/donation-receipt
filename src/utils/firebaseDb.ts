@@ -181,26 +181,43 @@ export async function batchSaveCloudDonations(donations: RawDonationRecord[]): P
 }
 
 /**
+ * 컬렉션 하나를 통째로 비웁니다 (Firestore 500개 배치 제한을 고려해 400개 단위로 삭제).
+ *
+ * v22: "초기화를 눌렀는데도 다음 업로드 때 예전 자료가 같이 남아있다"는 문제가
+ * 보고되어, 한 번의 조회+삭제로 끝내지 않고 삭제 후 실제로 컬렉션이 비었는지
+ * 다시 조회해서 확인하고, 혹시 문서가 남아있으면(대량 삭제 도중의 일시적 오류나
+ * 새로 추가된 문서 등으로) 다시 지우기를 반복합니다. "진짜 0건이 될 때까지" 확인하는
+ * 방식이라 deleteAllCloudDonations/deleteAllImportedFileRecords/deleteAllCloudAwards가
+ * 모두 이 함수를 공유합니다.
+ */
+async function deleteAllDocsInCollection(collectionPath: string): Promise<number> {
+  const firestore = requireDb();
+  let deleted = 0;
+
+  for (let attempt = 0; attempt < 5; attempt++) {
+    const snap = await getDocs(collection(firestore, collectionPath));
+    if (snap.empty) break;
+
+    const docs = snap.docs;
+    for (let i = 0; i < docs.length; i += 400) {
+      const chunk = docs.slice(i, i + 400);
+      const batch = writeBatch(firestore);
+      chunk.forEach((d) => batch.delete(d.ref));
+      await batch.commit();
+      deleted += chunk.length;
+    }
+  }
+
+  return deleted;
+}
+
+/**
  * 관리자용 후원내역 전체 초기화.
  * donations 컬렉션의 모든 문서를 삭제하며 donors/receipts/issuedReceipts 등
- * 다른 컬렉션은 건드리지 않습니다. Firestore의 500개 배치 제한을 고려해
- * 400개 단위로 나누어 삭제합니다.
+ * 다른 컬렉션은 건드리지 않습니다.
  */
 export async function deleteAllCloudDonations(): Promise<number> {
-  const firestore = requireDb();
-  const snap = await getDocs(collection(firestore, 'donations'));
-  if (snap.empty) return 0;
-
-  let deleted = 0;
-  const docs = snap.docs;
-  for (let i = 0; i < docs.length; i += 400) {
-    const chunk = docs.slice(i, i + 400);
-    const batch = writeBatch(firestore);
-    chunk.forEach((d) => batch.delete(d.ref));
-    await batch.commit();
-    deleted += chunk.length;
-  }
-  return deleted;
+  return deleteAllDocsInCollection('donations');
 }
 
 /* ==========================================================================
@@ -232,6 +249,19 @@ export async function recordFileImport(fileHash: string, fileName: string, rowCo
     rowCount,
     importedAt: new Date().toISOString(),
   });
+}
+
+/**
+ * "회원 명단 초기화"(deleteAllCloudDonations) 시 함께 호출해야 하는 함수입니다.
+ *
+ * importedFiles 컬렉션은 donations를 지워도 같이 지워지지 않는 별도 컬렉션이라,
+ * 이걸 비우지 않으면 "후원내역은 이미 0건으로 초기화됐는데, 초기화 전에 올렸던
+ * 파일을 다시 올리면 '이미 가져온 파일입니다 (OOO건 가져옴)'라는 예전 안내가
+ * 그대로 다시 뜨는" 문제가 생깁니다. 실제로는 donations가 비어 있어 다시 가져와도
+ * 문제가 없는데도, 이 예전 기록 때문에 마치 초기화가 안 된 것처럼 보이는 것입니다.
+ */
+export async function deleteAllImportedFileRecords(): Promise<number> {
+  return deleteAllDocsInCollection('importedFiles');
 }
 
 /* ==========================================================================
@@ -275,20 +305,7 @@ export async function batchSaveCloudAwards(awards: AwardRecord[]): Promise<void>
  * 관리자용 수상내역 전체 초기화. awards 컬렉션만 삭제하며 다른 컬렉션은 건드리지 않습니다.
  */
 export async function deleteAllCloudAwards(): Promise<number> {
-  const firestore = requireDb();
-  const snap = await getDocs(collection(firestore, 'awards'));
-  if (snap.empty) return 0;
-
-  let deleted = 0;
-  const docs = snap.docs;
-  for (let i = 0; i < docs.length; i += 400) {
-    const chunk = docs.slice(i, i + 400);
-    const batch = writeBatch(firestore);
-    chunk.forEach((d) => batch.delete(d.ref));
-    await batch.commit();
-    deleted += chunk.length;
-  }
-  return deleted;
+  return deleteAllDocsInCollection('awards');
 }
 
 /* ==========================================================================

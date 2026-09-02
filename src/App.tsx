@@ -45,6 +45,7 @@ import {
   loadCloudDonations,
   batchSaveCloudDonations,
   deleteAllCloudDonations,
+  deleteAllImportedFileRecords,
   loadCloudAwards,
   batchSaveCloudAwards,
   deleteAllCloudAwards,
@@ -279,9 +280,21 @@ export default function App() {
   // '회원 명단 초기화'는 화면만 비우는 것이 아니라, 로그인된 Firebase 환경에서는
   // donations 컬렉션 전체를 실제로 삭제합니다. 다른 컬렉션(donors, receipts,
   // issuedReceipts, organizations, counters)은 절대 삭제하지 않습니다.
+  //
+  // importedFiles(파일 재업로드 확인용 기록)는 donations와 별개 컬렉션이라 자동으로
+  // 같이 지워지지 않습니다. 이걸 그대로 두면, donations는 실제로 0건이 됐는데도
+  // 초기화 전에 올렸던 파일을 다시 올릴 때 "이미 가져온 파일입니다(OOO건 가져옴)"라는
+  // 예전 안내가 그대로 다시 떠서 마치 초기화가 안 된 것처럼 보이므로, 함께 비웁니다.
   const handleClearDonations = async (): Promise<{ deleted: number }> => {
     if (firebaseConfigured && auth?.currentUser) {
       const deleted = await deleteAllCloudDonations();
+      try {
+        // importedFiles 삭제가 실패하더라도(예: 드물게 규칙/권한 문제), 이미 성공한
+        // donations 삭제 자체는 화면에 정상 반영되어야 하므로 별도로 감쌉니다.
+        await deleteAllImportedFileRecords();
+      } catch (error) {
+        console.error('deleteAllImportedFileRecords error (donations 삭제 자체는 성공):', error);
+      }
       // 클라우드 삭제가 성공한 뒤에만 화면/로컬 상태를 비웁니다.
       setDonations([]);
       clearActiveDonations();

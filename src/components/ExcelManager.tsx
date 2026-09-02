@@ -457,9 +457,9 @@ export const ExcelManager: React.FC<ExcelManagerProps> = ({
             <p className="text-xs text-slate-600 mt-2 leading-relaxed">
               <strong className="text-red-700">현재 Firebase의 donations 컬렉션에 저장된 모든 후원내역이 영구적으로 삭제됩니다.</strong>
               <br />
-              삭제 대상은 <strong>후원내역(donations)만</strong>이며, 후원자 기본정보(donors), 발급된 영수증(receipts), 발급이력(issuedReceipts), 단체정보 및 일련번호는 삭제하지 않습니다.
+              삭제 대상은 <strong>후원내역(donations)</strong>과 <strong>"이미 가져온 파일" 기록(importedFiles)</strong>이며, 후원자 기본정보(donors), 발급된 영수증(receipts), 발급이력(issuedReceipts), 단체정보 및 일련번호는 삭제하지 않습니다.
               <br />
-              삭제가 성공한 뒤 화면도 0건으로 초기화됩니다. 이후 Excel을 다시 올리면 깨끗한 상태에서 새로 저장됩니다.
+              삭제가 성공한 뒤 화면도 0건으로 초기화됩니다. 이후 이전에 올렸던 파일을 다시 올려도 "이미 가져온 파일입니다" 안내 없이 깨끗한 상태에서 새로 저장됩니다.
             </p>
 
             <div className="mt-6 flex items-center justify-end gap-3">
@@ -480,7 +480,7 @@ export const ExcelManager: React.FC<ExcelManagerProps> = ({
                     setShowClearConfirm(false);
                     setLastParseResult(null);
                     setLastSaveResult(null);
-                    setSuccessMessage(`Firebase 후원내역 초기화 완료: ${result.deleted.toLocaleString()}건 삭제됨. 현재 누적 0건입니다.`);
+                    setSuccessMessage(`Firebase 후원내역 초기화 완료: ${result.deleted.toLocaleString()}건 삭제됨. 현재 누적 0건입니다. "이미 가져온 파일" 기록도 함께 비워졌으니, 이전 파일을 다시 올려도 경고 없이 새로 저장됩니다.`);
                   } catch (err: any) {
                     setErrorMessage(`Firebase 후원내역 초기화 실패: ${err?.message || String(err)}`);
                   } finally {

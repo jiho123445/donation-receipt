@@ -41,6 +41,11 @@ service cloud.firestore {
       allow read, write: if signedIn();
     }
 
+    // 6. 회원 표창(수상) 내역 컬렉션
+    match /awards/{awardId} {
+      allow read, write: if signedIn();
+    }
+
     // 기본 차단 규칙
     match /{document=**} {
       allow read, write: if false;
