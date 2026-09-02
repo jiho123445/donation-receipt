@@ -31,6 +31,7 @@ export const AwardManager: React.FC<AwardManagerProps> = ({
   // 성명으로 수상내역을 바로 조회하기 위한 검색 상태입니다 (회비납부현황 검색창과 같은 방식).
   const [searchInput, setSearchInput] = useState('');
   const [searchedName, setSearchedName] = useState<string | null>(null);
+  const [selectedYear, setSelectedYear] = useState<number | 'all'>('all');
 
   const uniqueRecipientCount = useMemo(
     () => new Set(awards.map((a) => a.recipientName.trim())).size,
@@ -40,6 +41,8 @@ export const AwardManager: React.FC<AwardManagerProps> = ({
     const years: number[] = Array.from(new Set(awards.map((rec) => rec.year)));
     return years.sort((yearA, yearB) => yearB - yearA);
   }, [awards]);
+
+  const filteredAwardsByYear = useMemo(() => selectedYear === 'all' ? awards : awards.filter((rec) => rec.year === selectedYear), [awards, selectedYear]);
 
   const handleSearch = () => {
     const target = searchInput.trim();
@@ -59,9 +62,10 @@ export const AwardManager: React.FC<AwardManagerProps> = ({
     if (!target) return [];
     return awards
       .filter((rec) => rec.recipientName.trim().toLowerCase().replace(/\s+/g, '').includes(target))
+      .filter((rec) => selectedYear === 'all' || rec.year === selectedYear)
       .slice()
       .sort((a, b) => a.recipientName.localeCompare(b.recipientName) || b.year - a.year);
-  }, [searchedName, awards]);
+  }, [searchedName, awards, selectedYear]);
 
   const searchResultNames = useMemo(
     () => Array.from(new Set(searchResults.map((rec) => rec.recipientName.trim()))),
