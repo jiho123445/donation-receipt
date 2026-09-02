@@ -456,6 +456,138 @@ function parseSheetRows(rawJson: any[][], periodForSheet: string): SheetParseOut
   return { records, columnMapping };
 }
 
+/** 시트 이름이나 표 제목 등에서 "2025년"처럼 4자리 연도를 뽑아냅니다. 못 찾으면 null입니다. */
+function inferYearFromLabel(label: string): number | null {
+  const text = String(label ?? '');
+  const withSuffix = text.match(/(20\d{2})\s*년/);
+  if (withSuffix) return parseInt(withSuffix[1], 10);
+  const leading = text.match(/^(20\d{2})(?!\d)/);
+  if (leading) return parseInt(leading[1], 10);
+  return null;
+}
+
+/**
+ * "회비납입현황" 같은 회비 관리 대장(월별 컬럼) 서식을 인식해 후원(회비) 레코드로 변환합니다.
+ *
+ * 재단에서 실제로 쓰는 회비 대장은 일반 후원내역 서식(한 행 = 한 건의 후원)과 달리,
+ * 회원 1명이 한 행을 차지하고 그 오른쪽으로 "1월, 2월, ... 12월"이 반복되며 각 달마다
+ * (납입금액, 납입일자) 두 칸씩 있는 표입니다. 즉 한 행 안에 그 회원의 열두 달치 납부내역이
+ * 전부 들어있습니다. 기존 parseSheetRows()는 "성명 + 금액" 열이 하나씩만 있다고 가정하기 때문에,
+ * 이런 표를 만나면 (안전장치 때문에) 맨 왼쪽 달 하나만 인식하고 나머지 11개월은 조용히
+ * 누락시키는 문제가 있었습니다. 이 함수는 그 달-반복 구조를 직접 인식해서, 실제로 금액이
+ * 채워진 달마다 각각 별도의 후원(회비) 레코드를 만듭니다.
+ *
+ * 연도는 시트 이름(예: "2025년 회원현황-260407")이나 표 상단 제목(예: "▣ 2025년 회비납입 현황 ▣")에서
+ * 추정합니다. 연도를 전혀 찾지 못하면 null을 반환해 일반 서식으로 다시 시도하게 합니다
+ * (연도를 추측해서 잘못 배정하는 것을 방지).
+ */
+function parseMonthlyDuesLedgerSheet(rawJson: any[][], sheetLabel: string): SheetParseOutcome | null {
+  let monthHeaderRowIndex = -1;
+  let monthCols: { month: number; amountCol: number; dateCol: number }[] = [];
+  let nameCol = -1;
+  let addressCol = -1;
+  let idCol = -1;
+
+  for (let r = 0; r < Math.min(rawJson.length, 10); r++) {
+    const row = rawJson[r];
+    if (!Array.isArray(row)) continue;
+
+    const monthMatches: { month: number; col: number }[] = [];
+    row.forEach((cellVal, colIdx) => {
+      const text = String(cellVal ?? '').trim();
+      const match = text.match(/^(\d{1,2})월$/);
+      if (match) {
+        const month = parseInt(match[1], 10);
+        if (month >= 1 && month <= 12) monthMatches.push({ month, col: colIdx });
+      }
+    });
+
+    // "N월"이 최소 3개 이상 반복돼야 진짜 월별 대장 서식으로 봅니다 (우연히 1~2개 매칭되는 것은 제외).
+    if (monthMatches.length >= 3) {
+      monthHeaderRowIndex = r;
+      monthCols = monthMatches.map((mm) => ({ month: mm.month, amountCol: mm.col, dateCol: mm.col + 1 }));
+      row.forEach((cellVal, colIdx) => {
+        const field = findMatchingField(String(cellVal ?? ''));
+        if (field === 'donorName' && nameCol < 0) nameCol = colIdx;
+        if (field === 'address' && addressCol < 0) addressCol = colIdx;
+        if (field === 'idNumber' && idCol < 0) idCol = colIdx;
+      });
+      break;
+    }
+  }
+
+  if (monthHeaderRowIndex === -1 || monthCols.length === 0 || nameCol < 0) return null;
+
+  let year = inferYearFromLabel(sheetLabel);
+  if (!year) {
+    for (let r = 0; r < monthHeaderRowIndex && !year; r++) {
+      const row = rawJson[r];
+      if (!Array.isArray(row)) continue;
+      for (const cellVal of row) {
+        const y = inferYearFromLabel(String(cellVal ?? ''));
+        if (y) {
+          year = y;
+          break;
+        }
+      }
+    }
+  }
+  if (!year) return null; // 연도를 추측하지 않고, 다른 서식으로 다시 시도하도록 넘깁니다.
+
+  // 월 헤더 바로 다음 줄이 "납입금액/납입일자" 같은 하위 헤더 줄이면 그 줄까지 건너뜁니다.
+  const possibleSubHeaderRow = rawJson[monthHeaderRowIndex + 1];
+  const hasSubHeaderRow =
+    Array.isArray(possibleSubHeaderRow) &&
+    monthCols.some(({ amountCol }) => {
+      const text = String(possibleSubHeaderRow[amountCol] ?? '').trim();
+      return text.includes('금액') || text.includes('납입') || text.includes('납부');
+    });
+  const dataStartRow = monthHeaderRowIndex + (hasSubHeaderRow ? 2 : 1);
+
+  const records: RawDonationRecord[] = [];
+
+  for (let r = dataStartRow; r < rawJson.length; r++) {
+    const row = rawJson[r];
+    if (!row || row.length === 0) continue;
+    const donorName = String(row[nameCol] ?? '').trim();
+    if (!donorName) continue;
+    const address = addressCol >= 0 ? String(row[addressCol] ?? '').trim() : '';
+    const idNumber = idCol >= 0 ? String(row[idCol] ?? '').trim() : '';
+
+    for (const { month, amountCol, dateCol } of monthCols) {
+      const amount = parseExcelAmount(row[amountCol]);
+      if (!amount || amount <= 0) continue; // 그 달에 납부 기록이 없는 칸은 건너뜁니다.
+
+      const parsedDate = parseExcelDate(row[dateCol]);
+      // 납입일자가 비어있거나 해당 연도와 다르면(오탈자 등), 최소한 "그 달 1일"로 기록해서
+      // 연도/월 조회에서는 정상적으로 잡히도록 합니다. 실제 납입일자가 있으면 그것을 그대로 씁니다.
+      const date = parsedDate && parsedDate.startsWith(String(year)) ? parsedDate : `${year}-${String(month).padStart(2, '0')}-01`;
+
+      records.push({
+        id: `rec-${Date.now()}-${r}-${amountCol}-${Math.random().toString(36).substring(2, 6)}`,
+        donorName,
+        idNumber,
+        address,
+        date,
+        period: `${year}-${String(month).padStart(2, '0')}`,
+        sourceRow: r + 1,
+        amount,
+        paymentMethod: '회비',
+        content: '회비',
+      });
+    }
+  }
+
+  if (records.length === 0) return null;
+
+  const columnMapping: Record<string, string> = {
+    [`${sheetLabel} 성명열`]: 'donorName',
+    [`${sheetLabel} ${year}년 월별(1~12월) 납입금액/납입일자열`]: 'amount+date',
+  };
+
+  return { records, columnMapping };
+}
+
 export async function parseDonationExcel(file: File): Promise<ParseResult> {
   const inferredPeriodFromFile = inferPeriodFromFileName(file.name);
   const buffer = await file.arrayBuffer();
@@ -485,7 +617,8 @@ export async function parseDonationExcel(file: File): Promise<ParseResult> {
       ? inferPeriodFromLabel(sheetName, inferredPeriodFromFile) || inferredPeriodFromFile
       : inferredPeriodFromFile;
 
-    const sheetOutcome = parseSheetRows(rawJson, periodForSheet);
+    // 먼저 "월별 컬럼이 반복되는 회비 대장" 서식인지 확인하고, 아니면 일반 후원내역 서식으로 처리합니다.
+    const sheetOutcome = parseMonthlyDuesLedgerSheet(rawJson, sheetName) || parseSheetRows(rawJson, periodForSheet);
     if (!sheetOutcome) continue; // 이 시트는 열 이름을 인식하지 못했습니다 — 건너뛰고 나머지 시트는 계속 처리합니다.
 
     anySheetRecognized = true;

@@ -2,6 +2,7 @@ import React, { useMemo, useRef, useState } from 'react';
 import { Award, Upload, Download, RefreshCw, Trash2, CheckCircle2, AlertCircle, ShieldCheck, Database } from 'lucide-react';
 import { AwardRecord } from '../types/donation';
 import { parseAwardExcel, downloadSampleAwardExcelTemplate, AwardParseResult } from '../utils/awardParser';
+import { parseAwardPdf } from '../utils/awardPdfParser';
 import { INITIAL_SAMPLE_AWARDS, AWARD_SEED_SOURCE_LABEL } from '../utils/awardSeedData';
 
 interface AwardManagerProps {
@@ -37,9 +38,9 @@ export const AwardManager: React.FC<AwardManagerProps> = ({
   }, [awards]);
 
   const handleFiles = async (files: FileList | File[]) => {
-    const selectedFiles = Array.from(files).filter((file) => /\.(xlsx|xls)$/i.test(file.name));
+    const selectedFiles = Array.from(files).filter((file) => /\.(xlsx|xls|pdf)$/i.test(file.name));
     if (selectedFiles.length === 0) {
-      setErrorMessage('Excel 파일(.xlsx 또는 .xls)만 업로드할 수 있습니다.');
+      setErrorMessage('Excel 파일(.xlsx, .xls) 또는 PDF 파일(.pdf)만 업로드할 수 있습니다.');
       return;
     }
 
@@ -55,7 +56,8 @@ export const AwardManager: React.FC<AwardManagerProps> = ({
 
       for (const file of selectedFiles) {
         try {
-          const result = await parseAwardExcel(file);
+          const isPdf = /\.pdf$/i.test(file.name);
+          const result = isPdf ? await parseAwardPdf(file) : await parseAwardExcel(file);
           if (result.records.length === 0) {
             errors.push(`${file.name}: 실제 수상 기록이 있는 행이 없습니다.`);
             continue;
@@ -121,7 +123,7 @@ export const AwardManager: React.FC<AwardManagerProps> = ({
             <span>회원 표창(수상) 내역 관리 및 조회</span>
           </h2>
           <p className="text-xs text-slate-600 mt-1">
-            "연번 / 성명 + 연도별 컬럼" 형식의 표창명단 엑셀을 올리면, 회원 검색 화면에서 이름으로 수상내역을 함께 조회할 수 있습니다.
+            "연번 / 성명 + 연도별 컬럼" 형식의 표창명단을 엑셀(.xlsx) 또는 PDF 원본 그대로 올리면, 회원 검색 화면에서 이름으로 수상내역을 함께 조회할 수 있습니다.
           </p>
         </div>
 
@@ -167,7 +169,7 @@ export const AwardManager: React.FC<AwardManagerProps> = ({
         <input
           type="file"
           ref={fileInputRef}
-          accept=".xlsx, .xls"
+          accept=".xlsx, .xls, .pdf"
           multiple
           className="hidden"
           onChange={(e) => {
@@ -182,17 +184,23 @@ export const AwardManager: React.FC<AwardManagerProps> = ({
         </div>
 
         <h3 className="text-base font-bold text-slate-900">
-          {isProcessing ? '표창명단 엑셀을 분석하는 중입니다...' : '표창명단 엑셀을 선택하거나 마우스로 끌어다 놓으세요'}
+          {isProcessing ? '표창명단 파일을 분석하는 중입니다...' : '표창명단 엑셀 또는 PDF를 선택하거나 마우스로 끌어다 놓으세요'}
         </h3>
         <p className="text-xs text-slate-500 mt-1">
-          또는 클릭하여 .xlsx / .xls 파일을 선택할 수 있습니다. (연도가 늘어나면 오른쪽에 연도 열을 추가해서 올려주세요)
+          또는 클릭하여 .xlsx / .xls / .pdf 파일을 선택할 수 있습니다. (연도가 늘어나면 오른쪽에 연도 열을 추가해서 올려주세요)
         </p>
 
         <div className="mt-4 flex flex-wrap items-center justify-center gap-2 text-[11px] text-slate-500">
           <span className="bg-slate-100 px-2 py-0.5 rounded border">연번</span>
           <span className="bg-slate-100 px-2 py-0.5 rounded border">성명</span>
           <span className="bg-slate-100 px-2 py-0.5 rounded border">2024 / 2023 / 2022 ... (연도별 컬럼)</span>
+          <span className="bg-emerald-50 text-emerald-700 px-2 py-0.5 rounded border border-emerald-200">PDF 원본도 그대로 업로드 가능</span>
         </div>
+
+        <p className="text-[11px] text-slate-400 mt-3 max-w-md mx-auto">
+          PDF는 표 안의 글자 위치를 분석해서 표를 다시 읽어내는 방식이라, 수상내역 문구가 줄바꿈되는 지점에서
+          아주 가끔 띄어쓰기가 살짝 어긋날 수 있습니다. 정확한 문구가 중요하면 업로드 후 결과를 한 번 확인해주세요.
+        </p>
       </div>
 
       {/* Success / Error Messages */}

@@ -59,11 +59,14 @@ export interface AwardParseResult {
 }
 
 /**
- * 시트 하나(header:1 형식의 2차원 배열)를 파싱합니다.
+ * 시트/표 하나(header:1 형식의 2차원 배열)를 파싱합니다.
  * 연도 컬럼이 하나라도 인식되면 "가로형", 성명+수상내역(+연도) 컬럼이 인식되면 "세로형"으로 처리합니다.
  * 어느 쪽도 인식하지 못하면 null을 반환합니다(다른 시트를 계속 시도할 수 있도록).
+ *
+ * 엑셀(parseAwardExcel)뿐 아니라 PDF 표창명단(awardPdfParser.ts에서 좌표 기반으로 복원한
+ * 표)도 결국 같은 2차원 배열 형태로 만들어 이 함수를 그대로 재사용합니다.
  */
-function parseAwardSheet(rawJson: any[][], sheetLabel: string): { records: AwardRecord[]; format: 'wide' | 'tidy' } | null {
+export function parseAwardSheet(rawJson: any[][], sheetLabel: string): { records: AwardRecord[]; format: 'wide' | 'tidy' } | null {
   if (rawJson.length === 0) return null;
 
   // 헤더 행 탐색: 성명 컬럼 + (연도 컬럼 1개 이상 또는 수상내역 컬럼)을 가장 많이 인식하는 행을 사용합니다.
