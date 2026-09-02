@@ -74,6 +74,7 @@ export default function App() {
   const [authReady, setAuthReady] = useState(!firebaseConfigured);
   const [firestoreStatus, setFirestoreStatus] = useState<FirestoreConnectionStatus | null>(null);
   const [showStatusBanner, setShowStatusBanner] = useState(true);
+  const [isReloadingCloudData, setIsReloadingCloudData] = useState(false);
 
   // Navigation
   const [activeTab, setActiveTab] = useState<'dashboard' | 'feeStatus' | 'search' | 'membership' | 'history' | 'awards' | 'members' | 'settings' | 'print'>('dashboard');
@@ -121,6 +122,114 @@ export default function App() {
     setFirestoreStatus(status);
   };
 
+  // 중요: 기존 Firebase에는 donations / awards / members 등 여러 컬렉션이 존재합니다.
+  // 한 컬렉션의 읽기 오류가 전체 로딩을 0건으로 만드는 Promise.all 방식은 사용하지 않습니다.
+  // 각 컬렉션을 독립적으로 읽어, 예를 들어 receipts 권한 오류가 있어도 donations/awards는 정상 표시합니다.
+  //
+  // 로그인 시(onAuthStateChanged)뿐 아니라, 화면 상태 배너의 "다시 불러오기" 버튼에서도
+  // 재사용할 수 있도록 별도 함수로 분리했습니다. 이전에는 firestoreStatus가 계산만 되고
+  // 화면 어디에도 렌더링되지 않아, donations/awards 로딩이 실패해도(예: 보안규칙/권한 문제)
+  // 사용자는 그냥 "0건"만 보고 원인을 알 수 없었습니다.
+  const loadAllCloudCollections = async () => {
+    setIsReloadingCloudData(true);
+    try {
+      const results = await Promise.allSettled([
+        loadCloudOrganization(),
+        loadCloudReceipts(),
+        loadCloudDonations(),
+        loadCloudAwards(),
+        loadCloudMembers(),
+      ]);
+
+      const [orgResult, receiptsResult, donationsResult, awardsResult, membersResult] = results;
+      const errors: string[] = [];
+
+      if (orgResult.status === 'fulfilled' && orgResult.value) {
+        setOrgInfo(orgResult.value);
+        saveOrganizationInfo(orgResult.value);
+      } else {
+        setOrgInfo(getOrganizationInfo());
+        if (orgResult.status === 'rejected') errors.push(`organizations: ${String(orgResult.reason?.message || orgResult.reason)}`);
+      }
+
+      if (receiptsResult.status === 'fulfilled') {
+        setIssuedReceipts(receiptsResult.value);
+      } else {
+        setIssuedReceipts([]);
+        errors.push(`receipts: ${String(receiptsResult.reason?.message || receiptsResult.reason)}`);
+      }
+
+      if (donationsResult.status === 'fulfilled') {
+        const normalizedCloudDonations = donationsResult.value.map((d, index) => ({
+          ...d,
+          id: d.id || `cloud-${index}-${Date.now()}`,
+          donorName: String(d.donorName || '').trim(),
+          idNumber: String(d.idNumber || '').trim(),
+          address: String(d.address || '').trim(),
+          date: String(d.date || d.period || ''),
+          period: String(d.period || ''),
+          amount: Math.round(Number(d.amount || 0)),
+          paymentMethod: String(d.paymentMethod || '').trim(),
+          content: String(d.content || '').trim(),
+        }));
+        setDonations(normalizedCloudDonations);
+        if (donationsResult.value.length === 0) {
+          errors.push('donations: 컬렉션에 문서가 0건입니다 (권한 오류는 아니며, Firestore의 donations 컬렉션 자체가 비어 있습니다).');
+        }
+      } else {
+        setDonations([]);
+        errors.push(`donations: ${String(donationsResult.reason?.message || donationsResult.reason)}`);
+      }
+
+      if (awardsResult.status === 'fulfilled') {
+        const normalizedCloudAwards = awardsResult.value.map((a, index) =>
+          normalizeAwardRecord(a as unknown as Record<string, unknown>, a.id || `cloud-award-${index}-${Date.now()}`)
+        );
+        setAwards(normalizedCloudAwards);
+      } else {
+        setAwards([]);
+        errors.push(`awards: ${String(awardsResult.reason?.message || awardsResult.reason)}`);
+      }
+
+      if (membersResult.status === 'fulfilled') {
+        setMembers(membersResult.value);
+      } else {
+        setMembers([]);
+        errors.push(`members: ${String(membersResult.reason?.message || membersResult.reason)}`);
+      }
+
+      // donations: 0건 안내는 "오류"가 아니라 "확인 필요" 성격이라 connected는 true로 유지합니다.
+      const hardErrors = errors.filter((e) => !e.startsWith('donations: 컬렉션에 문서가 0건'));
+      if (errors.length === 0) {
+        setFirestoreStatus({
+          connected: true,
+          message: `Cloud Firestore (프로젝트: ${firebaseConfig.projectId})의 기존 데이터를 정상적으로 불러왔습니다.`,
+        });
+      } else {
+        setFirestoreStatus({
+          connected: true,
+          message: hardErrors.length > 0
+            ? `Firebase에 연결되었으며 일부 컬렉션만 불러오지 못했습니다. (${hardErrors.length}개)`
+            : `Firebase에 정상 연결되었지만 donations 컬렉션에 자료가 없습니다.`,
+          errorDetail: errors.join('\n'),
+        });
+      }
+
+      setPrintSettings(getPrintSettings());
+    } finally {
+      setIsReloadingCloudData(false);
+    }
+  };
+
+  // 상태 배너의 "다시 불러오기" 버튼: 로그인된 상태에서 수동으로 재조회할 때 사용합니다.
+  const handleManualCloudReload = async () => {
+    if (!firebaseConfigured || !auth?.currentUser) {
+      await checkConnection();
+      return;
+    }
+    await loadAllCloudCollections();
+  };
+
   // Initialize data on mount
   useEffect(() => {
     checkConnection();
@@ -142,59 +251,7 @@ export default function App() {
         setIssuedReceipts([]);
         return;
       }
-      try {
-        const [cloudOrg, cloudReceipts, cloudDonations, cloudAwards, cloudMembers] = await Promise.all([
-          loadCloudOrganization(),
-          loadCloudReceipts(),
-          loadCloudDonations(),
-          loadCloudAwards(),
-        loadCloudMembers(),
-        ]);
-        if (cloudOrg) {
-          setOrgInfo(cloudOrg);
-          saveOrganizationInfo(cloudOrg);
-        } else {
-          const localOrg = getOrganizationInfo();
-          setOrgInfo(localOrg);
-          await saveCloudOrganization(localOrg);
-        }
-        setIssuedReceipts(cloudReceipts);
-        // Firestore에 저장된 각 문서는 각각 하나의 실제 후원행으로 취급합니다.
-        // 동일 날짜/금액이라는 이유로 화면 로딩 단계에서 임의로 합치면 Excel 3건이 2건으로
-        // 줄어드는 데이터 손실이 발생할 수 있으므로 절대로 dedup하지 않습니다.
-        const normalizedCloudDonations = cloudDonations.map((d, index) => ({
-          ...d,
-          id: d.id || `cloud-${index}-${Date.now()}`,
-          donorName: String(d.donorName || '').trim(),
-          idNumber: String(d.idNumber || '').trim(),
-          address: String(d.address || '').trim(),
-          date: String(d.date || ''),
-          amount: Math.round(Number(d.amount || 0)),
-          paymentMethod: String(d.paymentMethod || '').trim(),
-          content: String(d.content || '').trim(),
-        }));
-        setDonations(normalizedCloudDonations);
-        // 기존 awards 컬렉션은 연도/성명/수상명이 여러 필드명으로 저장된 자료가 있어
-        // 호환 정규화를 적용합니다. 연도를 알 수 없는 자료를 현재 연도로 임의 변경하지 않습니다.
-        const normalizedCloudAwards = cloudAwards.map((a, index) =>
-          normalizeAwardRecord(a as unknown as Record<string, unknown>, a.id || `cloud-award-${index}-${Date.now()}`)
-        );
-        setAwards(normalizedCloudAwards);
-        setFirestoreStatus({
-          connected: true,
-          message: `Cloud Firestore (프로젝트: ${firebaseConfig.projectId})에 정상 연결되었습니다.`,
-        });
-      } catch (error: any) {
-        console.error('Firestore 데이터 로드 실패:', error);
-        setFirestoreStatus({
-          connected: false,
-          message: `Firestore 연결 오류: ${error?.message || '데이터를 불러올 수 없습니다. Firestore 권한 설정을 확인하세요.'}`,
-          errorDetail: String(error),
-        });
-        setOrgInfo(getOrganizationInfo());
-        setIssuedReceipts(getIssuedReceipts());
-      }
-      setPrintSettings(getPrintSettings());
+      await loadAllCloudCollections();
     });
   }, []);
 
@@ -464,6 +521,58 @@ export default function App() {
         openSettingsModal={() => setIsOrgSettingsOpen(true)}
         onResetSearch={handleResetSearch}
       />
+
+      {/* Firestore Connection / Load Status Banner
+          v24: firestoreStatus는 예전부터 계산되고 있었지만 화면에 그려지는 코드가
+          없어서, donations/awards 로딩이 실패하거나(권한 오류 등) 컬렉션이 비어있어도
+          사용자는 원인을 전혀 알 수 없이 "0건"만 보게 되는 문제가 있었습니다.
+          이제 로그인 화면이 아닌 메인 화면에서도 연결 상태와 실제 오류 메시지를 보여줍니다. */}
+      {firestoreStatus && showStatusBanner && (firestoreStatus.errorDetail || !firestoreStatus.connected || firestoreStatus.message) && (
+        <div className="no-print max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 pt-4">
+          <div
+            className={`flex items-start gap-3 rounded-xl border p-3 text-sm ${
+              firestoreStatus.errorDetail || !firestoreStatus.connected
+                ? 'bg-amber-50 border-amber-300 text-amber-900'
+                : 'bg-emerald-50 border-emerald-200 text-emerald-900'
+            }`}
+          >
+            {firestoreStatus.errorDetail || !firestoreStatus.connected ? (
+              <AlertCircle className="w-5 h-5 shrink-0 mt-0.5 text-amber-600" />
+            ) : (
+              <CheckCircle2 className="w-5 h-5 shrink-0 mt-0.5 text-emerald-600" />
+            )}
+            <div className="flex-1 min-w-0">
+              <div className="flex items-center gap-1.5 font-semibold">
+                <Cloud className="w-4 h-4" />
+                <span>{firestoreStatus.message}</span>
+              </div>
+              {firestoreStatus.errorDetail && (
+                <pre className="mt-1.5 whitespace-pre-wrap break-all text-xs font-mono bg-white/60 border border-amber-200 rounded-lg p-2">
+                  {firestoreStatus.errorDetail}
+                </pre>
+              )}
+            </div>
+            <button
+              type="button"
+              onClick={handleManualCloudReload}
+              disabled={isReloadingCloudData}
+              title="Firestore에서 다시 불러오기"
+              className="shrink-0 flex items-center gap-1 px-2.5 py-1.5 rounded-lg border border-current/20 bg-white/70 hover:bg-white text-xs font-medium disabled:opacity-50 cursor-pointer"
+            >
+              <RefreshCw className={`w-3.5 h-3.5 ${isReloadingCloudData ? 'animate-spin' : ''}`} />
+              <span>다시 불러오기</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setShowStatusBanner(false)}
+              title="닫기"
+              className="shrink-0 p-1 rounded-lg hover:bg-white/70 cursor-pointer"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Main Content Area */}
       <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6">
