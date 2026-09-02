@@ -28,3 +28,6 @@ service cloud.firestore {
     match /{document=**} { allow read, write: if false; }
   }
 }
+
+// V5 member master: keep members under authenticated admin access.
+// If your rules already contain a catch-all authenticated rule this is redundant.
