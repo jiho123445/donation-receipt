@@ -5,7 +5,13 @@ const norm=(s:string)=>s.trim().toLowerCase().replace(/\s+/g,' ');
 const yOf=(d:RawDonationRecord)=>Number((d.date||d.period||'').slice(0,4))||0;
 const mOf=(d:RawDonationRecord)=>{const s=d.date||d.period||''; const m=Number(s.slice(5,7)); return m>=1&&m<=12?m:0};
 export const MembershipStatusManager:React.FC<{donations:RawDonationRecord[]}>=({donations})=>{
- const years=useMemo(()=>Array.from(new Set(donations.map(yOf).filter(Boolean))).sort((a,b)=>b-a),[donations]);
+const years = useMemo(
+  () =>
+    Array.from(new Set(donations.map(yOf).filter(Boolean)))
+      .map(Number)
+      .sort((a, b) => b - a),
+  [donations]
+);
  const [year,setYear]=useState<number>(years[0]||new Date().getFullYear()); const [q,setQ]=useState('');
  const rows=useMemo(()=>{const map=new Map<string,RawDonationRecord[]>(); donations.forEach(d=>{if(yOf(d)!==year)return; const k=`${norm(d.donorName)}|${d.idNumber||d.address}`; map.set(k,[...(map.get(k)||[]),d])}); return [...map.entries()].map(([k,rs])=>{const months=new Set(rs.map(mOf).filter(Boolean)); const total=rs.reduce((s,x)=>s+x.amount,0); return {k,name:rs[0].donorName,total,count:rs.length,months:[...months].sort((a,b)=>a-b),last:[...rs].sort((a,b)=>(b.date||b.period||'').localeCompare(a.date||a.period||''))[0]};}).sort((a,b)=>a.name.localeCompare(b.name,'ko'));},[donations,year]);
  const maxMonth=year===new Date().getFullYear()?new Date().getMonth()+1:12;
