@@ -1,5 +1,5 @@
 import React, { useMemo, useState } from 'react';
-import { Users, Wallet, Award, AlertTriangle, Search, CalendarDays, BarChart3 } from 'lucide-react';
+import { Users, Wallet, Award, Search, CalendarDays, BarChart3 } from 'lucide-react';
 import type { RawDonationRecord, AwardRecord } from '../types/donation';
 import { getAwardName, getAwardOrganization, getAwardRecipientName, getAwardYear } from '../utils/awardCompatibility';
 
@@ -232,15 +232,6 @@ export const ManagementDashboard: React.FC<{ donations: RawDonationRecord[]; awa
             </div>
           );
         })()}
-      </section>
-
-      <section className="border border-amber-200 bg-amber-50 rounded-xl p-4 flex gap-3">
-        <AlertTriangle className="w-5 h-5 text-amber-600 shrink-0" />
-        <div className="text-sm text-amber-900">
-          <b>수상실적 호환 처리:</b> 기존 Firebase 자료의 <code>year / awardYear / awardDate / date</code> 및
-          <code>recipientName / memberName / name</code> 등 여러 필드명을 자동 인식합니다.
-          그래도 표시되지 않는 자료가 있으면 해당 Firestore 문서의 실제 필드 구조를 확인해야 합니다.
-        </div>
       </section>
     </main>
   );
