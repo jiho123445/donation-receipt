@@ -73,7 +73,20 @@ export const Header: React.FC<HeaderProps> = ({
         <div className="flex items-center justify-between border-t border-slate-100">
           <nav className="flex space-x-1 py-1.5" aria-label="메인 메뉴">
             <button onClick={() => setActiveTab('dashboard')} className={`flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-md transition-all cursor-pointer ${activeTab === 'dashboard' ? 'bg-blue-900 text-white shadow-xs' : 'text-slate-700 hover:bg-slate-100 hover:text-slate-900'}`}><LayoutDashboard className="w-4 h-4"/><span>통합현황</span></button>
-            <button onClick={() => setActiveTab('feeStatus')} className={`flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-md transition-all cursor-pointer ${activeTab === 'feeStatus' ? 'bg-blue-900 text-white shadow-xs' : 'text-slate-700 hover:bg-slate-100 hover:text-slate-900'}`}><WalletCards className="w-4 h-4"/><span>회비·미납관리</span></button>
+            <button onClick={() => setActiveTab('feeStatus')} className={`flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-md transition-all cursor-pointer ${activeTab === 'feeStatus' ? 'bg-blue-900 text-white shadow-xs' : 'text-slate-700 hover:bg-slate-100 hover:text-slate-900'}`}><WalletCards className="w-4 h-4"/><span>회비 현황 요약</span></button>
+
+            <button
+              onClick={() => setActiveTab('membership')}
+              className={`flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-md transition-all cursor-pointer ${
+                activeTab === 'membership'
+                  ? 'bg-blue-900 text-white shadow-xs'
+                  : 'text-slate-700 hover:bg-slate-100 hover:text-slate-900'
+              }`}
+            >
+              <Wallet className="w-4 h-4" />
+              <span>회비 조회·확인서 발급</span>
+            </button>
+
             <button
               onClick={() => {
                 setActiveTab('search');
@@ -86,19 +99,7 @@ export const Header: React.FC<HeaderProps> = ({
               }`}
             >
               <FileText className="w-4 h-4" />
-              <span>영수증 발급</span>
-            </button>
-
-            <button
-              onClick={() => setActiveTab('membership')}
-              className={`flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-md transition-all cursor-pointer ${
-                activeTab === 'membership'
-                  ? 'bg-blue-900 text-white shadow-xs'
-                  : 'text-slate-700 hover:bg-slate-100 hover:text-slate-900'
-              }`}
-            >
-              <Wallet className="w-4 h-4" />
-              <span>회비납부현황</span>
+              <span>기부금 영수증 발급</span>
             </button>
 
             <button
@@ -113,8 +114,6 @@ export const Header: React.FC<HeaderProps> = ({
               <span>발급내역 관리</span>
             </button>
 
-            <button onClick={() => setActiveTab('members')} className={`flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-md transition-all cursor-pointer ${activeTab === 'members' ? 'bg-blue-900 text-white shadow-xs' : 'text-slate-700 hover:bg-slate-100 hover:text-slate-900'}`}><UserCog className="w-4 h-4"/><span>회원관리</span></button>
-
             <button
               onClick={() => setActiveTab('awards')}
               className={`flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-md transition-all cursor-pointer ${
@@ -126,6 +125,8 @@ export const Header: React.FC<HeaderProps> = ({
               <Award className="w-4 h-4" />
               <span>수상내역 관리</span>
             </button>
+
+            <button onClick={() => setActiveTab('members')} className={`flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-md transition-all cursor-pointer ${activeTab === 'members' ? 'bg-blue-900 text-white shadow-xs' : 'text-slate-700 hover:bg-slate-100 hover:text-slate-900'}`}><UserCog className="w-4 h-4"/><span>회원관리</span></button>
           </nav>
 
           {/* Quick utility action buttons */}

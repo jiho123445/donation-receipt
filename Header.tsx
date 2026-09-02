@@ -1,61 +1,65 @@
 import React from 'react';
-import { Building2, FileText, Settings, Printer, AlertTriangle, Wallet, Award, LayoutDashboard, WalletCards, UserCog } from 'lucide-react';
+import { Building2, FileText, Settings, Upload, Printer, AlertTriangle, Database, ShieldCheck } from 'lucide-react';
 import { OrganizationInfo } from '../types/donation';
 
 interface HeaderProps {
-  activeTab: 'dashboard' | 'feeStatus' | 'search' | 'membership' | 'history' | 'awards' | 'members' | 'settings' | 'print';
-  setActiveTab: (tab: 'dashboard' | 'feeStatus' | 'search' | 'membership' | 'history' | 'awards' | 'members' | 'settings' | 'print') => void;
+  activeTab: 'search' | 'history' | 'excel' | 'settings' | 'print';
+  setActiveTab: (tab: 'search' | 'history' | 'excel' | 'settings' | 'print') => void;
   orgInfo: OrganizationInfo;
-  donorCount?: number;
-  recordCount?: number;
-  issuedCount?: number;
+  donorCount: number;
+  recordCount: number;
+  issuedCount: number;
   openSettingsModal: () => void;
-  onResetSearch?: () => void;
 }
 
 export const Header: React.FC<HeaderProps> = ({
   activeTab,
   setActiveTab,
   orgInfo,
+  donorCount,
+  recordCount,
+  issuedCount,
   openSettingsModal,
-  onResetSearch,
 }) => {
   const isMissingStatutory = !orgInfo.registrationNo && !orgInfo.bizNo;
-
-  const handleLogoClick = () => {
-    setActiveTab('search');
-    onResetSearch?.();
-  };
 
   return (
     <header className="no-print bg-white border-b border-slate-200 sticky top-0 z-40 shadow-xs">
       {/* Top institution bar */}
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="flex items-center justify-between h-16">
-          {/* Logo & Title - Clicking '사단법인' or Title resets to clean search home screen */}
-          <div
-            className="flex items-center gap-3 cursor-pointer select-none group hover:opacity-90 transition-opacity"
-            onClick={handleLogoClick}
-            title="클릭 시 기부금영수증 초기 검색화면으로 이동합니다"
-          >
-            <div className="w-10 h-10 rounded-lg bg-blue-900 text-white flex items-center justify-center font-bold text-lg shadow-xs group-hover:bg-blue-800 transition-colors">
+          {/* Logo & Title */}
+          <div className="flex items-center gap-3 cursor-pointer" onClick={() => setActiveTab('search')}>
+            <div className="w-10 h-10 rounded-lg bg-blue-900 text-white flex items-center justify-center font-bold text-lg shadow-xs">
               <Building2 className="w-5 h-5 text-blue-200" />
             </div>
             <div>
               <div className="flex items-center gap-2">
-                <span className="text-xs font-semibold px-2 py-0.5 rounded-sm bg-blue-50 text-blue-800 border border-blue-200 group-hover:bg-blue-100 transition-colors">
+                <span className="text-xs font-semibold px-2 py-0.5 rounded-sm bg-blue-50 text-blue-800 border border-blue-200">
                   사단법인
                 </span>
                 <span className="text-xs text-slate-500 font-medium">사회복지법인 행정전산</span>
               </div>
-              <h1 className="text-lg font-bold text-slate-900 leading-tight group-hover:text-blue-950">
+              <h1 className="text-lg font-bold text-slate-900 leading-tight">
                 {orgInfo.name} <span className="text-blue-900 font-extrabold">기부금영수증 발급시스템</span>
               </h1>
             </div>
           </div>
 
-          {/* Statutory warning badge if applicable */}
-          <div className="flex items-center gap-3 text-xs">
+          {/* Quick Status Badges */}
+          <div className="hidden md:flex items-center gap-4 text-xs">
+            <div className="flex items-center gap-2 bg-slate-50 px-3 py-1.5 rounded-md border border-slate-200">
+              <Database className="w-4 h-4 text-slate-500" />
+              <span>후원건수: <strong className="text-blue-900 font-bold">{recordCount.toLocaleString()}건</strong></span>
+              <span className="text-slate-300">|</span>
+              <span>후원자: <strong className="text-slate-900 font-bold">{donorCount.toLocaleString()}명</strong></span>
+            </div>
+
+            <div className="flex items-center gap-1.5 bg-blue-50 px-3 py-1.5 rounded-md border border-blue-100 text-blue-900">
+              <FileText className="w-4 h-4 text-blue-700" />
+              <span>발급완료: <strong>{issuedCount}건</strong></span>
+            </div>
+
             {isMissingStatutory && (
               <button
                 onClick={openSettingsModal}
@@ -72,26 +76,8 @@ export const Header: React.FC<HeaderProps> = ({
         {/* Primary Navigation Tabs */}
         <div className="flex items-center justify-between border-t border-slate-100">
           <nav className="flex space-x-1 py-1.5" aria-label="메인 메뉴">
-            <button onClick={() => setActiveTab('dashboard')} className={`flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-md transition-all cursor-pointer ${activeTab === 'dashboard' ? 'bg-blue-900 text-white shadow-xs' : 'text-slate-700 hover:bg-slate-100 hover:text-slate-900'}`}><LayoutDashboard className="w-4 h-4"/><span>통합현황</span></button>
-            <button onClick={() => setActiveTab('feeStatus')} className={`flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-md transition-all cursor-pointer ${activeTab === 'feeStatus' ? 'bg-blue-900 text-white shadow-xs' : 'text-slate-700 hover:bg-slate-100 hover:text-slate-900'}`}><WalletCards className="w-4 h-4"/><span>회비 현황 요약</span></button>
-
             <button
-              onClick={() => setActiveTab('membership')}
-              className={`flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-md transition-all cursor-pointer ${
-                activeTab === 'membership'
-                  ? 'bg-blue-900 text-white shadow-xs'
-                  : 'text-slate-700 hover:bg-slate-100 hover:text-slate-900'
-              }`}
-            >
-              <Wallet className="w-4 h-4" />
-              <span>회비 조회·확인서 발급</span>
-            </button>
-
-            <button
-              onClick={() => {
-                setActiveTab('search');
-                onResetSearch?.();
-              }}
+              onClick={() => setActiveTab('search')}
               className={`flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-md transition-all cursor-pointer ${
                 activeTab === 'search'
                   ? 'bg-blue-900 text-white shadow-xs'
@@ -99,19 +85,7 @@ export const Header: React.FC<HeaderProps> = ({
               }`}
             >
               <FileText className="w-4 h-4" />
-              <span>기부금 영수증 발급</span>
-            </button>
-
-            <button
-              onClick={() => setActiveTab('awards')}
-              className={`flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-md transition-all cursor-pointer ${
-                activeTab === 'awards'
-                  ? 'bg-blue-900 text-white shadow-xs'
-                  : 'text-slate-700 hover:bg-slate-100 hover:text-slate-900'
-              }`}
-            >
-              <Award className="w-4 h-4" />
-              <span>수상내역 관리</span>
+              <span>영수증 발급 (후원자 검색)</span>
             </button>
 
             <button
@@ -124,9 +98,24 @@ export const Header: React.FC<HeaderProps> = ({
             >
               <FileText className="w-4 h-4" />
               <span>발급내역 관리</span>
+              {issuedCount > 0 && (
+                <span className={`text-xs px-1.5 py-0.2 rounded-full ${activeTab === 'history' ? 'bg-blue-800 text-white' : 'bg-slate-200 text-slate-700'}`}>
+                  {issuedCount}
+                </span>
+              )}
             </button>
 
-            <button onClick={() => setActiveTab('members')} className={`flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-md transition-all cursor-pointer ${activeTab === 'members' ? 'bg-blue-900 text-white shadow-xs' : 'text-slate-700 hover:bg-slate-100 hover:text-slate-900'}`}><UserCog className="w-4 h-4"/><span>회원관리</span></button>
+            <button
+              onClick={() => setActiveTab('excel')}
+              className={`flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-md transition-all cursor-pointer ${
+                activeTab === 'excel'
+                  ? 'bg-blue-900 text-white shadow-xs'
+                  : 'text-slate-700 hover:bg-slate-100 hover:text-slate-900'
+              }`}
+            >
+              <Upload className="w-4 h-4" />
+              <span>Excel 후원자료 관리</span>
+            </button>
           </nav>
 
           {/* Quick utility action buttons */}

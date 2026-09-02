@@ -346,7 +346,7 @@ export const DonorSearch: React.FC<DonorSearchProps> = ({
             사단법인 너브내행복나눔재단
           </div>
           <h2 className="text-2xl font-black text-slate-900 group-hover:text-blue-900 transition-colors">
-            {isMembership ? '회비납부현황 발급시스템' : '기부금영수증 발급시스템'}
+            {isMembership ? '회비 조회·확인서 발급시스템' : '기부금영수증 발급시스템'}
           </h2>
         </button>
         <p className="text-xs text-slate-500 mt-1 max-w-lg mx-auto">
