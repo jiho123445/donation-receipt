@@ -70,21 +70,21 @@ export const Header: React.FC<HeaderProps> = ({
         </div>
 
         {/* Primary Navigation Tabs */}
-        <div className="flex items-center justify-between border-t border-slate-100">
-          <nav className="flex space-x-1 py-1.5" aria-label="메인 메뉴">
-            <button onClick={() => setActiveTab('dashboard')} className={`flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-md transition-all cursor-pointer ${activeTab === 'dashboard' ? 'bg-blue-900 text-white shadow-xs' : 'text-slate-700 hover:bg-slate-100 hover:text-slate-900'}`}><LayoutDashboard className="w-4 h-4"/><span>통합현황</span></button>
-            <button onClick={() => setActiveTab('feeStatus')} className={`flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-md transition-all cursor-pointer ${activeTab === 'feeStatus' ? 'bg-blue-900 text-white shadow-xs' : 'text-slate-700 hover:bg-slate-100 hover:text-slate-900'}`}><WalletCards className="w-4 h-4"/><span>회비 현황 요약</span></button>
+        <div className="flex flex-wrap items-center justify-between gap-y-1 border-t border-slate-100">
+          <nav className="flex flex-wrap items-center gap-1 py-1.5" aria-label="메인 메뉴">
+            <button onClick={() => setActiveTab('dashboard')} className={`shrink-0 whitespace-nowrap flex items-center gap-1.5 px-3 py-2 text-sm font-medium rounded-md transition-all cursor-pointer ${activeTab === 'dashboard' ? 'bg-blue-900 text-white shadow-xs' : 'text-slate-700 hover:bg-slate-100 hover:text-slate-900'}`}><LayoutDashboard className="w-4 h-4"/><span>통합현황</span></button>
+            <button onClick={() => setActiveTab('feeStatus')} className={`shrink-0 whitespace-nowrap flex items-center gap-1.5 px-3 py-2 text-sm font-medium rounded-md transition-all cursor-pointer ${activeTab === 'feeStatus' ? 'bg-blue-900 text-white shadow-xs' : 'text-slate-700 hover:bg-slate-100 hover:text-slate-900'}`}><WalletCards className="w-4 h-4"/><span>회비 현황 요약</span></button>
 
             <button
               onClick={() => setActiveTab('membership')}
-              className={`flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-md transition-all cursor-pointer ${
+              className={`shrink-0 whitespace-nowrap flex items-center gap-1.5 px-3 py-2 text-sm font-medium rounded-md transition-all cursor-pointer ${
                 activeTab === 'membership'
                   ? 'bg-blue-900 text-white shadow-xs'
                   : 'text-slate-700 hover:bg-slate-100 hover:text-slate-900'
               }`}
             >
               <Wallet className="w-4 h-4" />
-              <span>회비 조회·확인서 발급</span>
+              <span>회비 조회·발급</span>
             </button>
 
             <button
@@ -92,19 +92,19 @@ export const Header: React.FC<HeaderProps> = ({
                 setActiveTab('search');
                 onResetSearch?.();
               }}
-              className={`flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-md transition-all cursor-pointer ${
+              className={`shrink-0 whitespace-nowrap flex items-center gap-1.5 px-3 py-2 text-sm font-medium rounded-md transition-all cursor-pointer ${
                 activeTab === 'search'
                   ? 'bg-blue-900 text-white shadow-xs'
                   : 'text-slate-700 hover:bg-slate-100 hover:text-slate-900'
               }`}
             >
               <FileText className="w-4 h-4" />
-              <span>기부금 영수증 발급</span>
+              <span>기부금영수증 발급</span>
             </button>
 
             <button
               onClick={() => setActiveTab('history')}
-              className={`flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-md transition-all cursor-pointer ${
+              className={`shrink-0 whitespace-nowrap flex items-center gap-1.5 px-3 py-2 text-sm font-medium rounded-md transition-all cursor-pointer ${
                 activeTab === 'history'
                   ? 'bg-blue-900 text-white shadow-xs'
                   : 'text-slate-700 hover:bg-slate-100 hover:text-slate-900'
@@ -116,7 +116,7 @@ export const Header: React.FC<HeaderProps> = ({
 
             <button
               onClick={() => setActiveTab('awards')}
-              className={`flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-md transition-all cursor-pointer ${
+              className={`shrink-0 whitespace-nowrap flex items-center gap-1.5 px-3 py-2 text-sm font-medium rounded-md transition-all cursor-pointer ${
                 activeTab === 'awards'
                   ? 'bg-blue-900 text-white shadow-xs'
                   : 'text-slate-700 hover:bg-slate-100 hover:text-slate-900'
@@ -126,14 +126,14 @@ export const Header: React.FC<HeaderProps> = ({
               <span>수상내역 관리</span>
             </button>
 
-            <button onClick={() => setActiveTab('members')} className={`flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-md transition-all cursor-pointer ${activeTab === 'members' ? 'bg-blue-900 text-white shadow-xs' : 'text-slate-700 hover:bg-slate-100 hover:text-slate-900'}`}><UserCog className="w-4 h-4"/><span>회원관리</span></button>
+            <button onClick={() => setActiveTab('members')} className={`shrink-0 whitespace-nowrap flex items-center gap-1.5 px-3 py-2 text-sm font-medium rounded-md transition-all cursor-pointer ${activeTab === 'members' ? 'bg-blue-900 text-white shadow-xs' : 'text-slate-700 hover:bg-slate-100 hover:text-slate-900'}`}><UserCog className="w-4 h-4"/><span>회원관리</span></button>
           </nav>
 
           {/* Quick utility action buttons */}
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2 shrink-0">
             <button
               onClick={() => setActiveTab('print')}
-              className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-slate-700 bg-slate-100 hover:bg-slate-200 rounded-md border border-slate-300 transition-colors cursor-pointer"
+              className="shrink-0 whitespace-nowrap flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-slate-700 bg-slate-100 hover:bg-slate-200 rounded-md border border-slate-300 transition-colors cursor-pointer"
             >
               <Printer className="w-3.5 h-3.5 text-slate-600" />
               <span>인쇄설정</span>
@@ -141,7 +141,7 @@ export const Header: React.FC<HeaderProps> = ({
 
             <button
               onClick={openSettingsModal}
-              className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-md border transition-colors cursor-pointer ${
+              className={`shrink-0 whitespace-nowrap flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-md border transition-colors cursor-pointer ${
                 isMissingStatutory
                   ? 'bg-amber-100 text-amber-900 border-amber-400 font-bold'
                   : 'text-slate-700 bg-slate-100 hover:bg-slate-200 border-slate-300'
