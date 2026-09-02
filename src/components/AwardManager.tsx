@@ -1,5 +1,5 @@
 import React, { useMemo, useRef, useState } from 'react';
-import { Award, Upload, Download, RefreshCw, Trash2, CheckCircle2, AlertCircle, ShieldCheck, Database } from 'lucide-react';
+import { Award, Upload, Download, RefreshCw, Trash2, CheckCircle2, AlertCircle, ShieldCheck, Database, Search, X, RotateCcw } from 'lucide-react';
 import { AwardRecord } from '../types/donation';
 import { parseAwardExcel, downloadSampleAwardExcelTemplate, AwardParseResult } from '../utils/awardParser';
 import { parseAwardPdf } from '../utils/awardPdfParser';
@@ -28,6 +28,10 @@ export const AwardManager: React.FC<AwardManagerProps> = ({
   const [isClearing, setIsClearing] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  // 성명으로 수상내역을 바로 조회하기 위한 검색 상태입니다 (회비납부현황 검색창과 같은 방식).
+  const [searchInput, setSearchInput] = useState('');
+  const [searchedName, setSearchedName] = useState<string | null>(null);
+
   const uniqueRecipientCount = useMemo(
     () => new Set(awards.map((a) => a.recipientName.trim())).size,
     [awards]
@@ -36,6 +40,33 @@ export const AwardManager: React.FC<AwardManagerProps> = ({
     const years: number[] = Array.from(new Set(awards.map((rec) => rec.year)));
     return years.sort((yearA, yearB) => yearB - yearA);
   }, [awards]);
+
+  const handleSearch = () => {
+    const target = searchInput.trim();
+    if (!target) return;
+    setSearchedName(target);
+  };
+
+  const handleResetSearch = () => {
+    setSearchInput('');
+    setSearchedName(null);
+  };
+
+  // 이름 일부만 입력해도(부분일치) 찾을 수 있도록 합니다. (동명이인이면 여러 명이 함께 나옵니다)
+  const searchResults = useMemo(() => {
+    if (!searchedName) return [];
+    const target = searchedName.trim().toLowerCase().replace(/\s+/g, '');
+    if (!target) return [];
+    return awards
+      .filter((rec) => rec.recipientName.trim().toLowerCase().replace(/\s+/g, '').includes(target))
+      .slice()
+      .sort((a, b) => a.recipientName.localeCompare(b.recipientName) || b.year - a.year);
+  }, [searchedName, awards]);
+
+  const searchResultNames = useMemo(
+    () => Array.from(new Set(searchResults.map((rec) => rec.recipientName.trim()))),
+    [searchResults]
+  );
 
   const handleFiles = async (files: FileList | File[]) => {
     const selectedFiles = Array.from(files).filter((file) => /\.(xlsx|xls|pdf)$/i.test(file.name));
@@ -131,6 +162,116 @@ export const AwardManager: React.FC<AwardManagerProps> = ({
           <ShieldCheck className="w-4 h-4 text-emerald-600" />
           <span>관리자 로그인 후 Firebase에 수상내역 누적 저장</span>
         </div>
+      </div>
+
+      {/* Name Search — 회비납부현황 검색창과 동일한 방식으로, 이 화면에서 바로 수상내역을 조회합니다. */}
+      <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-xs space-y-4">
+        <div className="flex items-center justify-between">
+          <div className="text-left">
+            <label htmlFor="award-search-input" className="block text-sm font-bold text-slate-900 mb-0.5">
+              회원의 성명으로 수상내역을 조회하세요
+            </label>
+            <p className="text-xs text-slate-500">
+              성명을 입력하신 후 검색 버튼을 누르거나 Enter를 치세요.
+            </p>
+          </div>
+
+          {(searchedName || searchInput) && (
+            <button
+              type="button"
+              onClick={handleResetSearch}
+              className="text-xs text-slate-500 hover:text-blue-900 font-semibold inline-flex items-center gap-1 px-2.5 py-1 rounded-md bg-slate-100 hover:bg-blue-50 border border-slate-200 transition-colors cursor-pointer"
+              title="검색 내용을 지웁니다"
+            >
+              <RotateCcw className="w-3.5 h-3.5" />
+              <span>초기화</span>
+            </button>
+          )}
+        </div>
+
+        <form
+          onSubmit={(e) => {
+            e.preventDefault();
+            handleSearch();
+          }}
+          className="flex gap-2"
+        >
+          <div className="relative flex-1">
+            <Search className="w-5 h-5 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
+            <input
+              id="award-search-input"
+              type="text"
+              placeholder="예: 홍길동, 김철수, 이영희"
+              value={searchInput}
+              onChange={(e) => setSearchInput(e.target.value)}
+              className="w-full pl-11 pr-10 py-3 text-sm border-2 border-slate-300 rounded-lg focus:border-blue-900 focus:ring-2 focus:ring-blue-900/20 font-medium placeholder:text-slate-400"
+            />
+            {searchInput && (
+              <button
+                type="button"
+                onClick={() => setSearchInput('')}
+                className="absolute right-3 top-1/2 -translate-y-1/2 p-1 text-slate-400 hover:text-slate-600 rounded-full hover:bg-slate-100 cursor-pointer"
+                title="입력 지우기"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            )}
+          </div>
+          <button
+            type="submit"
+            className="px-6 py-3 bg-blue-900 hover:bg-blue-800 text-white font-bold text-sm rounded-lg shadow-sm transition-all shrink-0 cursor-pointer flex items-center gap-1.5"
+          >
+            <Search className="w-4 h-4" />
+            <span>검색</span>
+          </button>
+        </form>
+
+        {/* Search Result */}
+        {searchedName && (
+          searchResults.length === 0 ? (
+            <div className="p-6 text-center border border-dashed border-slate-200 rounded-lg">
+              <div className="w-10 h-10 rounded-full bg-slate-100 text-slate-400 flex items-center justify-center mx-auto mb-2">
+                <AlertCircle className="w-5 h-5" />
+              </div>
+              <h4 className="text-sm font-bold text-slate-800">
+                '{searchedName}' 수상내역을 찾을 수 없습니다.
+              </h4>
+              <p className="text-xs text-slate-500 mt-1">
+                성명이 정확한지 확인하시거나, 아직 등록되지 않은 연도의 표창명단을 위에서 불러와주세요.
+              </p>
+            </div>
+          ) : (
+            <div className="border border-amber-200 bg-amber-50/60 rounded-lg overflow-hidden">
+              <div className="px-4 py-2.5 flex items-center gap-1.5 border-b border-amber-200 bg-amber-50">
+                <Award className="w-4 h-4 text-amber-600" />
+                <h4 className="text-xs font-bold text-amber-900">
+                  '{searchedName}' 검색결과 ({searchResults.length.toLocaleString()}건
+                  {searchResultNames.length > 1 ? ` · 동명이인 포함 ${searchResultNames.length}명` : ''})
+                </h4>
+              </div>
+              <table className="w-full text-xs text-left">
+                <thead className="bg-amber-50/50 text-amber-800 font-semibold">
+                  <tr>
+                    <th className="px-4 py-2 w-24">연번</th>
+                    <th className="px-4 py-2">성명</th>
+                    <th className="px-4 py-2 w-20">연도</th>
+                    <th className="px-4 py-2">수상내역</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-amber-100">
+                  {searchResults.map((rec) => (
+                    <tr key={rec.id}>
+                      <td className="px-4 py-2 font-mono text-amber-800">{rec.memberNo || '-'}</td>
+                      <td className="px-4 py-2 font-bold text-amber-900">{rec.recipientName}</td>
+                      <td className="px-4 py-2 font-mono font-bold text-amber-900">{rec.year}</td>
+                      <td className="px-4 py-2 text-amber-900">{rec.awardName}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )
+        )}
       </div>
 
       {/* Quick load: attached 2024 award list */}
