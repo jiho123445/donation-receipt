@@ -29,5 +29,9 @@
   },
   "include": [
     "src"
+  ],
+  "exclude": [
+    "src/utils/ShareReceiptModal.tsx",
+    "src/components/ShareReceiptModal_1.tsx"
   ]
 }

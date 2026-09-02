@@ -15,6 +15,7 @@ import type {
   IssuedReceiptRecord,
   RawDonationRecord,
   DonorRecord,
+  AwardRecord,
 } from '../types/donation';
 import { db } from '../firebase';
 
@@ -231,6 +232,63 @@ export async function recordFileImport(fileHash: string, fileName: string, rowCo
     rowCount,
     importedAt: new Date().toISOString(),
   });
+}
+
+/* ==========================================================================
+   2-2. awards 컬렉션: 회원 표창(수상) 내역
+   (연번/성명 + 연도별 컬럼으로 된 표창명단을 성명+연도+수상내역 단위로 정규화해 저장합니다.
+    donations와 마찬가지로 개인정보가 섞인 원본은 브라우저 localStorage에는 저장하지 않습니다.)
+   ========================================================================== */
+
+export async function loadCloudAwards(): Promise<AwardRecord[]> {
+  try {
+    const snap = await getDocs(collection(requireDb(), 'awards'));
+    return snap.docs.map((d) => ({
+      id: d.id,
+      ...(d.data() as Omit<AwardRecord, 'id'>),
+    }));
+  } catch (error) {
+    console.error('loadCloudAwards error:', error);
+    throw error;
+  }
+}
+
+export async function batchSaveCloudAwards(awards: AwardRecord[]): Promise<void> {
+  const firestore = requireDb();
+  const chunks: AwardRecord[][] = [];
+  for (let i = 0; i < awards.length; i += 400) {
+    chunks.push(awards.slice(i, i + 400));
+  }
+
+  for (const chunk of chunks) {
+    const batch = writeBatch(firestore);
+    chunk.forEach((a) => {
+      const docId = a.id || `award_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
+      const ref = doc(firestore, 'awards', docId);
+      batch.set(ref, stripUndefined(a), { merge: true });
+    });
+    await batch.commit();
+  }
+}
+
+/**
+ * 관리자용 수상내역 전체 초기화. awards 컬렉션만 삭제하며 다른 컬렉션은 건드리지 않습니다.
+ */
+export async function deleteAllCloudAwards(): Promise<number> {
+  const firestore = requireDb();
+  const snap = await getDocs(collection(firestore, 'awards'));
+  if (snap.empty) return 0;
+
+  let deleted = 0;
+  const docs = snap.docs;
+  for (let i = 0; i < docs.length; i += 400) {
+    const chunk = docs.slice(i, i + 400);
+    const batch = writeBatch(firestore);
+    chunk.forEach((d) => batch.delete(d.ref));
+    await batch.commit();
+    deleted += chunk.length;
+  }
+  return deleted;
 }
 
 /* ==========================================================================

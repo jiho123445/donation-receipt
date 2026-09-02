@@ -1,29 +1,34 @@
 import React, { useState, useMemo } from 'react';
-import { Search, UserCheck, Users, Calendar, FileText, CheckCircle2, AlertCircle, ArrowRight, Upload, Building2, Download, X, RotateCcw } from 'lucide-react';
-import { RawDonationRecord, DonorGroup, OrganizationInfo } from '../types/donation';
+import { Search, UserCheck, Users, Calendar, FileText, CheckCircle2, AlertCircle, ArrowRight, Upload, Building2, Download, X, RotateCcw, Award } from 'lucide-react';
+import { RawDonationRecord, DonorGroup, OrganizationInfo, AwardRecord } from '../types/donation';
 import { formatKRW, numberToHangulAmount } from '../utils/hangulCurrency';
 import { downloadSampleExcelTemplate } from '../utils/excelParser';
 
 interface DonorSearchProps {
   donations: RawDonationRecord[];
+  /** 회원 표창(수상) 내역. 식별번호가 없는 명단이므로 "성명"이 정확히 일치하는 것을 기준으로 조회합니다. */
+  awards?: AwardRecord[];
   orgInfo: OrganizationInfo;
   onStartIssuance: (donor: { donorName: string; idNumber: string; address: string; taxYear: number; donations: RawDonationRecord[] }) => void;
   onOpenExcel: () => void;
   onOpenHistory: () => void;
   onOpenOrgSettings: () => void;
   onOpenPrintSettings: () => void;
+  onOpenAwards?: () => void;
   onResetSearch?: () => void;
   documentType?: 'receipt' | 'membership';
 }
 
 export const DonorSearch: React.FC<DonorSearchProps> = ({
   donations,
+  awards = [],
   orgInfo,
   onStartIssuance,
   onOpenExcel,
   onOpenHistory,
   onOpenOrgSettings,
   onOpenPrintSettings,
+  onOpenAwards,
   onResetSearch,
   documentType = 'receipt',
 }) => {
@@ -186,6 +191,26 @@ export const DonorSearch: React.FC<DonorSearchProps> = ({
     return groups;
   }, [donations]);
 
+  // 수상내역은 식별번호가 없는 명단(성명 기준)이므로, 성명을 정규화해 매칭용 맵을 만들어둡니다.
+  const normalizeName = (v?: string) => (v || '').trim().toLowerCase().replace(/\s+/g, ' ');
+
+  const awardsByName = useMemo(() => {
+    const map = new Map<string, AwardRecord[]>();
+    for (const record of awards) {
+      const key = normalizeName(record.recipientName);
+      if (!key) continue;
+      const list = map.get(key) || [];
+      list.push(record);
+      map.set(key, list);
+    }
+    for (const list of map.values()) {
+      list.sort((a, b) => b.year - a.year);
+    }
+    return map;
+  }, [awards]);
+
+  const getAwardsForName = (name?: string): AwardRecord[] => awardsByName.get(normalizeName(name)) || [];
+
   const getIdLabel = (donor: DonorGroup) => {
     const raw = (donor.idNumber || '').trim();
     if (!raw || raw === '-' || raw === '미등록') return '식별번호: 미등록';
@@ -254,6 +279,15 @@ export const DonorSearch: React.FC<DonorSearchProps> = ({
     if (!selectedDonorKey) return null;
     return donorGroups.find((g) => g.donorKey === selectedDonorKey) || null;
   }, [selectedDonorKey, donorGroups]);
+
+  // 선택된 후원자의 수상내역 (성명 완전일치 기준 — 주민번호가 없는 명단이라 동명이인이면 참고용입니다)
+  const activeDonorAwards = useMemo(() => getAwardsForName(activeDonor?.donorName), [activeDonor, awardsByName]);
+
+  // 검색했지만 후원(회비)내역상의 후원자로는 찾지 못한 이름이라도, 수상내역에는 있을 수 있으므로 별도로 확인합니다.
+  const searchedNameAwardsOnly = useMemo(() => {
+    if (!searchedName || matchedDonors.length > 0) return [];
+    return getAwardsForName(searchedName);
+  }, [searchedName, matchedDonors, awardsByName]);
 
   // Active donor donations filtered by selected tax year
   const yearDonations = useMemo(() => {
@@ -425,6 +459,27 @@ export const DonorSearch: React.FC<DonorSearchProps> = ({
             <Upload className="w-3.5 h-3.5" />
             <span>Excel 관리에서 자료 확인</span>
           </button>
+
+          {/* 후원(회비)내역상의 후원자는 아니지만, 수상내역에는 같은 이름이 있는 경우 함께 안내합니다. */}
+          {searchedNameAwardsOnly.length > 0 && (
+            <div className="mt-4 text-left bg-amber-50 border border-amber-200 rounded-lg p-4">
+              <div className="flex items-center gap-1.5 text-xs font-bold text-amber-900">
+                <Award className="w-3.5 h-3.5 text-amber-600" />
+                <span>'{searchedName}'(으)로 등록된 수상내역이 {searchedNameAwardsOnly.length}건 있습니다.</span>
+              </div>
+              <p className="text-[11px] text-amber-700 mt-1">
+                후원(회비)내역은 없지만 표창명단에는 동일한 성명이 있습니다. 동명이인일 수 있으니 참고용으로 확인해주세요.
+              </p>
+              <ul className="mt-2 space-y-1 text-xs text-amber-900">
+                {searchedNameAwardsOnly.map((a) => (
+                  <li key={a.id} className="flex items-center gap-2">
+                    <span className="font-mono font-bold">{a.year}</span>
+                    <span>{a.awardName}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
         </div>
       )}
 
@@ -627,6 +682,34 @@ export const DonorSearch: React.FC<DonorSearchProps> = ({
               </div>
             )}
 
+            {/* Award (수상내역) Panel — 표창명단에 같은 성명이 있으면 연도별로 함께 보여줍니다. */}
+            {activeDonorAwards.length > 0 && (
+              <div className="border border-amber-200 bg-amber-50/60 rounded-lg overflow-hidden">
+                <div className="px-4 py-2.5 flex items-center gap-1.5 border-b border-amber-200 bg-amber-50">
+                  <Award className="w-4 h-4 text-amber-600" />
+                  <h4 className="text-xs font-bold text-amber-900">
+                    수상내역 ({activeDonorAwards.length}건) — 성명 기준 조회이며 동명이인일 경우 실제 수상자와 다를 수 있습니다.
+                  </h4>
+                </div>
+                <table className="w-full text-xs text-left">
+                  <thead className="bg-amber-50/50 text-amber-800 font-semibold">
+                    <tr>
+                      <th className="px-4 py-2 w-20">연도</th>
+                      <th className="px-4 py-2">수상내역</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-amber-100">
+                    {activeDonorAwards.map((a) => (
+                      <tr key={a.id}>
+                        <td className="px-4 py-2 font-mono font-bold text-amber-900">{a.year}</td>
+                        <td className="px-4 py-2 text-amber-900">{a.awardName}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+
             {/* Action Bar */}
             <div className="pt-4 flex flex-col sm:flex-row items-center justify-between gap-3">
               <button
@@ -658,7 +741,7 @@ export const DonorSearch: React.FC<DonorSearchProps> = ({
         <div className="text-sm font-bold text-slate-800 mb-3">
           빠른 행정 메뉴
         </div>
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+        <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
           <button
             onClick={onOpenHistory}
             className="p-3.5 bg-white hover:bg-slate-100 rounded-lg border border-slate-200 text-left transition-colors cursor-pointer"
@@ -690,6 +773,16 @@ export const DonorSearch: React.FC<DonorSearchProps> = ({
             <div className="text-sm font-bold text-slate-900">인쇄설정</div>
             <div className="text-xs text-slate-600 mt-1">A4 여백 및 출력 배율 조정</div>
           </button>
+
+          {onOpenAwards && (
+            <button
+              onClick={onOpenAwards}
+              className="p-3.5 bg-white hover:bg-slate-100 rounded-lg border border-slate-200 text-left transition-colors cursor-pointer"
+            >
+              <div className="text-sm font-bold text-slate-900">수상내역 관리</div>
+              <div className="text-xs text-slate-600 mt-1">표창명단 불러오기 및 엑셀 업로드</div>
+            </button>
+          )}
         </div>
       </div>
     </div>

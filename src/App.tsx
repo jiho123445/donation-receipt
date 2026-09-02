@@ -9,6 +9,7 @@ import {
   PrintSettings,
   ReceiptFormType,
   DocumentType,
+  AwardRecord,
 } from './types/donation';
 import {
   getOrganizationInfo,
@@ -27,6 +28,7 @@ import { Header } from './components/Header';
 import { DonorSearch } from './components/DonorSearch';
 import { IssuanceHistory } from './components/IssuanceHistory';
 import { ExcelManager } from './components/ExcelManager';
+import { AwardManager } from './components/AwardManager';
 import { OrgSettingsModal } from './components/OrgSettingsModal';
 import { PrintSettingsModal } from './components/PrintSettingsModal';
 import { IssuanceConfirmModal } from './components/IssuanceConfirmModal';
@@ -35,12 +37,17 @@ import { OfficialReceiptA4 } from './components/OfficialReceiptA4';
 import { LoginScreen } from './components/LoginScreen';
 import { INITIAL_SAMPLE_DONATIONS } from './utils/sampleData';
 import { mergeDonationRecords } from './utils/donationDedup';
+import { mergeAwardRecords } from './utils/awardDedup';
+import { INITIAL_SAMPLE_AWARDS } from './utils/awardSeedData';
 import {
   loadCloudOrganization,
   loadCloudReceipts,
   loadCloudDonations,
   batchSaveCloudDonations,
   deleteAllCloudDonations,
+  loadCloudAwards,
+  batchSaveCloudAwards,
+  deleteAllCloudAwards,
   saveCloudOrganization,
   saveCloudReceipt,
   cancelCloudReceipt,
@@ -60,7 +67,7 @@ export default function App() {
   const [showStatusBanner, setShowStatusBanner] = useState(true);
 
   // Navigation
-  const [activeTab, setActiveTab] = useState<'search' | 'membership' | 'history' | 'excel' | 'settings' | 'print'>('search');
+  const [activeTab, setActiveTab] = useState<'search' | 'membership' | 'history' | 'excel' | 'awards' | 'settings' | 'print'>('search');
   const [searchResetKey, setSearchResetKey] = useState<number>(0);
 
   const handleResetSearch = () => {
@@ -71,6 +78,9 @@ export default function App() {
   // 실제 후원자료는 항상 Firebase(또는 명시적으로 업로드한 Excel)를 원본으로 사용합니다.
   // 샘플자료는 사용자가 '샘플 데이터 불러오기'를 눌렀을 때만 로드합니다.
   const [donations, setDonations] = useState<RawDonationRecord[]>([]);
+  // 회원 표창(수상) 내역 — 첨부된 표창명단(PDF/엑셀)을 성명+연도+수상내역 단위로 정규화해 보관합니다.
+  // donations와 동일하게 로그인 시 Firebase(awards 컬렉션)를 원본으로 사용하며 localStorage에는 저장하지 않습니다.
+  const [awards, setAwards] = useState<AwardRecord[]>([]);
   const [orgInfo, setOrgInfo] = useState<OrganizationInfo>(getOrganizationInfo());
   const [issuedReceipts, setIssuedReceipts] = useState<IssuedReceiptRecord[]>([]);
   const [printSettings, setPrintSettings] = useState<PrintSettings>(getPrintSettings());
@@ -108,6 +118,7 @@ export default function App() {
     if (!firebaseConfigured || !auth) {
       setAuthReady(true);
       setDonations([]);
+      setAwards([]);
       setOrgInfo(getOrganizationInfo());
       setIssuedReceipts(getIssuedReceipts());
       setPrintSettings(getPrintSettings());
@@ -122,10 +133,11 @@ export default function App() {
         return;
       }
       try {
-        const [cloudOrg, cloudReceipts, cloudDonations] = await Promise.all([
+        const [cloudOrg, cloudReceipts, cloudDonations, cloudAwards] = await Promise.all([
           loadCloudOrganization(),
           loadCloudReceipts(),
           loadCloudDonations(),
+          loadCloudAwards(),
         ]);
         if (cloudOrg) {
           setOrgInfo(cloudOrg);
@@ -151,6 +163,14 @@ export default function App() {
           content: String(d.content || '').trim(),
         }));
         setDonations(normalizedCloudDonations);
+        const normalizedCloudAwards = cloudAwards.map((a, index) => ({
+          ...a,
+          id: a.id || `cloud-award-${index}-${Date.now()}`,
+          recipientName: String(a.recipientName || '').trim(),
+          awardName: String(a.awardName || '').trim(),
+          year: Number(a.year) || new Date().getFullYear(),
+        }));
+        setAwards(normalizedCloudAwards);
         setFirestoreStatus({
           connected: true,
           message: `Cloud Firestore (프로젝트: ${firebaseConfig.projectId})에 정상 연결되었습니다.`,
@@ -200,6 +220,48 @@ export default function App() {
       added: added.length,
       duplicates,
     };
+  };
+
+  // Update Awards Handler
+  // donations와 동일한 이유로, 로그인된 Firebase 모드에서는 매 업로드/불러오기 직전에
+  // Cloud의 최신 awards를 다시 읽어 병합합니다. (화면 상태만 기존자료로 쓰면 이미 저장된 수상내역을 놓칠 수 있음)
+  const handleUpdateAwards = async (records: AwardRecord[]) => {
+    let baseRecords = awards;
+
+    if (firebaseConfigured && auth?.currentUser) {
+      baseRecords = await loadCloudAwards();
+    }
+
+    const { records: merged, added, duplicates } = mergeAwardRecords(baseRecords, records);
+
+    if (firebaseConfigured && auth?.currentUser && added.length > 0) {
+      await batchSaveCloudAwards(added);
+    }
+
+    setAwards(merged);
+
+    return {
+      total: merged.length,
+      added: added.length,
+      duplicates,
+    };
+  };
+
+  // 첨부된 표창명단(PDF)을 옮겨 담은 기본 수상내역을 한 번에 불러옵니다.
+  const handleLoadSeedAwards = async () => {
+    return handleUpdateAwards(INITIAL_SAMPLE_AWARDS);
+  };
+
+  // Clear Awards Handler — awards 컬렉션만 초기화하며 다른 자료는 건드리지 않습니다.
+  const handleClearAwards = async (): Promise<{ deleted: number }> => {
+    if (firebaseConfigured && auth?.currentUser) {
+      const deleted = await deleteAllCloudAwards();
+      setAwards([]);
+      return { deleted };
+    }
+
+    setAwards([]);
+    return { deleted: 0 };
   };
 
   // 파일 재업로드 확인 (파일 전체 해시 기준)
@@ -390,6 +452,7 @@ export default function App() {
           <DonorSearch
             key={searchResetKey}
             donations={donations}
+            awards={awards}
             orgInfo={orgInfo}
             documentType="receipt"
             onStartIssuance={(donor) => setConfirmModalData({ ...donor, documentType: 'receipt' })}
@@ -397,6 +460,7 @@ export default function App() {
             onOpenHistory={() => setActiveTab('history')}
             onOpenOrgSettings={() => setIsOrgSettingsOpen(true)}
             onOpenPrintSettings={() => setIsPrintSettingsOpen(true)}
+            onOpenAwards={() => setActiveTab('awards')}
             onResetSearch={handleResetSearch}
           />
         )}
@@ -406,6 +470,7 @@ export default function App() {
           <DonorSearch
             key={`membership-${searchResetKey}`}
             donations={donations}
+            awards={awards}
             orgInfo={orgInfo}
             documentType="membership"
             onStartIssuance={(donor) => setConfirmModalData({ ...donor, documentType: 'membership' })}
@@ -413,6 +478,7 @@ export default function App() {
             onOpenHistory={() => setActiveTab('history')}
             onOpenOrgSettings={() => setIsOrgSettingsOpen(true)}
             onOpenPrintSettings={() => setIsPrintSettingsOpen(true)}
+            onOpenAwards={() => setActiveTab('awards')}
             onResetSearch={handleResetSearch}
           />
         )}
@@ -435,6 +501,16 @@ export default function App() {
             onLoadSample={() => setDonations(INITIAL_SAMPLE_DONATIONS)}
             onCheckFileImported={handleCheckFileImported}
             onRecordFileImport={handleRecordFileImport}
+          />
+        )}
+
+        {/* Tab 4: Award (수상내역) Upload & Management */}
+        {activeTab === 'awards' && (
+          <AwardManager
+            awards={awards}
+            onUpdateAwards={handleUpdateAwards}
+            onClearAwards={handleClearAwards}
+            onLoadSeedAwards={handleLoadSeedAwards}
           />
         )}
       </main>

@@ -89,3 +89,19 @@ export interface PrintSettings {
   offsetY: number; // in mm, -10 to +10
   scale: number; // in %, 95 to 105
 }
+
+/**
+ * 회원 표창(수상) 내역 1건.
+ * "OO년 사단법인 너브내행복나눔재단 표창명단"처럼 연번/성명 + 연도별 수상내역이
+ * 가로로 나열된 명단(엑셀/PDF)을 세로 레코드 하나(연도 1개 + 수상내역 1건)로 정규화한 형태입니다.
+ * 주민번호 등 식별번호가 없는 명단이므로 원칙적으로 "성명" 기준으로 조회합니다.
+ */
+export interface AwardRecord {
+  id: string;
+  recipientName: string; // 성명
+  memberNo?: string; // 연번(원본 명단의 번호, 참고용)
+  year: number; // 수상연도 (표의 연도 컬럼, 예: 2024)
+  awardName: string; // 수상내역 (예: "2023년 송년회 도의회의장상")
+  sourceLabel?: string; // 원본 출처(예: 파일명 또는 "2024년 표창명단") — 참고/디버깅용
+  sourceRow?: number; // 원본 표의 행 번호(참고용)
+}
