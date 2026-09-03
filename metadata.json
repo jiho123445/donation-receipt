@@ -1,6 +1,6 @@
 {
-  "name": "너브내행복나눔재단 기부금영수증 발급시스템",
-  "description": "사단법인 너브내행복나눔재단 전용 공식 기부금영수증(소득세법/법인세법) 자동 발급 및 A4 인쇄 관리 시스템",
+  "name": "재단 행정관리시스템",
+  "description": "사단법인 너브내행복나눔재단 행정관리시스템",
   "requestFramePermissions": [],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }
