@@ -83,6 +83,14 @@ export function cancelIssuedReceipt(receiptNo: string): void {
   localStorage.setItem(RECEIPTS_STORAGE_KEY, JSON.stringify(updated));
 }
 
+// 발급취소(무효화)와 달리, 이 함수는 로컬 저장소에서 발급내역 자체를 완전히 제거합니다.
+// 테스트로 발급한 내역을 흔적 없이 지우고 싶을 때 사용합니다.
+export function deleteIssuedReceiptLocal(receiptNo: string): void {
+  const list = getIssuedReceipts();
+  const updated = list.filter((r) => r.receiptNo !== receiptNo);
+  localStorage.setItem(RECEIPTS_STORAGE_KEY, JSON.stringify(updated));
+}
+
 export function getNextReceiptNumber(taxYear: number, kind: 'receipt' | 'membership' = 'receipt'): string {
   const receipts = getIssuedReceipts();
   const prefix = kind === 'membership' ? 'MEM-' : '';
