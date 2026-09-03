@@ -1,5 +1,5 @@
 import React from 'react';
-import { Building2, FileText, Settings, Printer, AlertTriangle, Wallet, Award, LayoutDashboard, WalletCards, UserCog } from 'lucide-react';
+import { Building2, FileText, Settings, Printer, AlertTriangle, Wallet, Award, LayoutDashboard, WalletCards, UserCog, LogOut } from 'lucide-react';
 import { OrganizationInfo } from '../types/donation';
 
 interface HeaderProps {
@@ -11,6 +11,7 @@ interface HeaderProps {
   issuedCount?: number;
   openSettingsModal: () => void;
   onResetSearch?: () => void;
+  onLogout?: () => void;
 }
 
 export const Header: React.FC<HeaderProps> = ({
@@ -19,6 +20,7 @@ export const Header: React.FC<HeaderProps> = ({
   orgInfo,
   openSettingsModal,
   onResetSearch,
+  onLogout,
 }) => {
   const isMissingStatutory = !orgInfo.registrationNo && !orgInfo.bizNo;
 
@@ -150,6 +152,20 @@ export const Header: React.FC<HeaderProps> = ({
               <Settings className="w-3.5 h-3.5 text-slate-600" />
               <span>재단/단체정보</span>
             </button>
+
+            {onLogout && (
+              <button
+                onClick={() => {
+                  if (window.confirm('로그아웃 하시겠습니까?')) {
+                    onLogout();
+                  }
+                }}
+                className="shrink-0 whitespace-nowrap flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-red-700 bg-red-50 hover:bg-red-100 rounded-md border border-red-200 transition-colors cursor-pointer"
+              >
+                <LogOut className="w-3.5 h-3.5 text-red-600" />
+                <span>로그아웃</span>
+              </button>
+            )}
           </div>
         </div>
       </div>
