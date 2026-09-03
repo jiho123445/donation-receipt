@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { onAuthStateChanged, signOut, type User } from 'firebase/auth';
 import { AlertCircle, CheckCircle2, Cloud, RefreshCw, X } from 'lucide-react';
 import { auth, firebaseConfigured, firebaseConfig } from './firebase';
@@ -132,7 +132,15 @@ export default function App() {
   // 재사용할 수 있도록 별도 함수로 분리했습니다. 이전에는 firestoreStatus가 계산만 되고
   // 화면 어디에도 렌더링되지 않아, donations/awards 로딩이 실패해도(예: 보안규칙/권한 문제)
   // 사용자는 그냥 "0건"만 보고 원인을 알 수 없었습니다.
+  // Firebase의 onAuthStateChanged는 페이지 로드 초기에 짧은 시간차를 두고 두 번
+  // 호출될 수 있습니다(예: 세션 복원 전/후). 이 경우 아래 loadAllCloudCollections()가
+  // 중복으로 겹쳐 실행되면서, 먼저 끝난 호출의 데이터가 화면에 잠깐 보였다가 나중에
+  // 끝난 호출의 데이터로 바뀌는 '깜빡임'이 생길 수 있습니다(예: 방금 삭제한 발급내역이
+  // 잠깐 다시 보였다가 사라지는 현상). isLoadingCollectionsRef로 중복 실행을 막습니다.
+  const isLoadingCollectionsRef = useRef(false);
   const loadAllCloudCollections = async () => {
+    if (isLoadingCollectionsRef.current) return;
+    isLoadingCollectionsRef.current = true;
     setIsReloadingCloudData(true);
     try {
       const results = await Promise.allSettled([
@@ -220,6 +228,7 @@ export default function App() {
       setPrintSettings(getPrintSettings());
     } finally {
       setIsReloadingCloudData(false);
+      isLoadingCollectionsRef.current = false;
     }
   };
 
@@ -395,6 +404,24 @@ export default function App() {
     if (firebaseConfigured && auth?.currentUser) {
       cancelCloudReceipt(receiptNo).catch(console.error);
     }
+  };
+
+  // 발급 확인창을 열기 전, 클라우드 발급내역(issuedReceipts) 로딩이 아직 끝나지 않았다면
+  // 잠시 대기하도록 안내합니다. 로딩이 끝나기 전에 열면 "중복 발급 여부" 판단이 아직
+  // 최신이 아닐 수 있어(로딩 완료 후 화면이 잠깐 바뀌는 것처럼 보이는 원인), 아예 로딩
+  // 완료 후에만 확인창을 열도록 합니다.
+  const handleStartIssuance = (donor: {
+    donorName: string;
+    idNumber: string;
+    address: string;
+    taxYear: number;
+    donations: RawDonationRecord[];
+  }, documentType: DocumentType) => {
+    if (isReloadingCloudData) {
+      alert('발급내역을 불러오는 중입니다. 잠시 후 다시 시도해주세요.');
+      return;
+    }
+    setConfirmModalData({ ...donor, documentType });
   };
 
   // Permanently delete an Issued Receipt (테스트 발급내역 등을 완전히 삭제할 때 사용)
@@ -616,7 +643,7 @@ export default function App() {
             awards={awards}
             orgInfo={orgInfo}
             documentType="receipt"
-            onStartIssuance={(donor) => setConfirmModalData({ ...donor, documentType: 'receipt' })}
+            onStartIssuance={(donor) => handleStartIssuance(donor, 'receipt')}
             onOpenExcel={() => setActiveTab('membership')}
             onOpenHistory={() => setActiveTab('history')}
             onOpenOrgSettings={() => setIsOrgSettingsOpen(true)}
@@ -639,7 +666,7 @@ export default function App() {
               awards={awards}
               orgInfo={orgInfo}
               documentType="membership"
-              onStartIssuance={(donor) => setConfirmModalData({ ...donor, documentType: 'membership' })}
+              onStartIssuance={(donor) => handleStartIssuance(donor, 'membership')}
               onOpenExcel={() =>
                 document.getElementById('excel-manager-section')?.scrollIntoView({ behavior: 'smooth', block: 'start' })
               }
