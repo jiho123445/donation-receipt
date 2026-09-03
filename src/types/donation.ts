@@ -11,6 +11,7 @@ export interface RawDonationRecord {
   donationType?: string; // 일반기부금, 지정기부금 등
   donationCode?: string; // e.g. 40
   content?: string; // 후원금, 장학후원 등
+  sourceFileHash?: string; // 이 레코드가 만들어진 원본 엑셀 파일의 SHA-256 해시(재업로드 시 이전 자료 교체용)
 }
 
 export interface DonorRecord {
