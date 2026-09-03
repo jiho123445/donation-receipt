@@ -41,7 +41,7 @@ import { ReceiptPreviewModal } from './components/ReceiptPreviewModal';
 import { OfficialReceiptA4 } from './components/OfficialReceiptA4';
 import { LoginScreen } from './components/LoginScreen';
 import { INITIAL_SAMPLE_DONATIONS } from './utils/sampleData';
-import { mergeDonationRecords } from './utils/donationDedup';
+import { mergeDonationRecords, replaceFileRecords } from './utils/donationDedup';
 import { mergeAwardRecords } from './utils/awardDedup';
 import { normalizeAwardRecord } from './utils/awardCompatibility';
 import { INITIAL_SAMPLE_AWARDS } from './utils/awardSeedData';
@@ -50,6 +50,7 @@ import {
   loadCloudReceipts,
   loadCloudDonations,
   batchSaveCloudDonations,
+  deleteCloudDonationsByIds,
   deleteAllCloudDonations,
   deleteAllImportedFileRecords,
   loadCloudAwards,
@@ -276,12 +277,41 @@ export default function App() {
   // Excel과 병합합니다. 이 방식이면
   //   Firebase 2건 + Excel 3건 -> 최종 3건
   // 이 정확하게 유지됩니다.
-  const handleUpdateDonations = async (records: RawDonationRecord[]) => {
+  // reimportFileHashes: "이미 가져온 파일이 있습니다 → 그래도 다시 가져오기"를 눌렀을 때만 전달됩니다.
+  // 이 값이 있으면, 그 파일 해시로 저장돼있던 예전 레코드(예: 날짜가 잘못 인식됐던 자료)를
+  // 전부 지우고 이번에 새로 파싱된 레코드로 정확히 교체합니다. id는 파싱할 때마다 새로
+  // 무작위 생성되므로, 이 표시가 없으면 예전 자료는 남은 채 새 자료가 중복으로 쌓입니다.
+  const handleUpdateDonations = async (
+    records: RawDonationRecord[],
+    reimportFileHashes?: string[]
+  ) => {
     let baseRecords = donations;
 
     if (firebaseConfigured && auth?.currentUser) {
       // 회원 명단 초기화 여부와 관계없이 Firebase를 원본으로 다시 읽습니다.
       baseRecords = await loadCloudDonations();
+    }
+
+    if (reimportFileHashes && reimportFileHashes.length > 0) {
+      const { records: merged, removed, added } = replaceFileRecords(baseRecords, records, reimportFileHashes);
+
+      if (firebaseConfigured && auth?.currentUser) {
+        if (removed.length > 0) {
+          await deleteCloudDonationsByIds(removed.map((r) => r.id));
+        }
+        if (added.length > 0) {
+          await batchSaveCloudDonations(added);
+        }
+      }
+
+      setDonations(merged);
+
+      return {
+        total: merged.length,
+        added: added.length,
+        duplicates: 0,
+        replaced: removed.length,
+      };
     }
 
     const { records: merged, added, updated, duplicates } = mergeDonationRecords(baseRecords, records);
@@ -296,6 +326,7 @@ export default function App() {
       total: merged.length,
       added: added.length,
       duplicates,
+      replaced: 0,
     };
   };
 
@@ -526,11 +557,17 @@ export default function App() {
       setConfirmModalData(null);
       setPreviewReceipt(newReceipt);
       return { success: true };
-    } catch (err) {
+    } catch (err: any) {
       console.error('영수증 생성 오류:', err);
+      // 실제 원인(예: Firestore 보안규칙 권한 거부, 발급번호 생성 트랜잭션 실패 등)을
+      // 화면에도 그대로 보여줘서, "오류가 발생했습니다"만으로는 알 수 없던 원인을
+      // 사용자가 바로 확인하고 필요하면 Firebase 콘솔에서 조치할 수 있도록 합니다.
+      const detail = err?.code || err?.message;
       return {
         success: false,
-        error: '영수증 생성 중 오류가 발생했습니다. 다시 시도해주세요.',
+        error: detail
+          ? `영수증 생성 중 오류가 발생했습니다. (사유: ${detail})\n\nFirestore 보안규칙(firestore.rules)이 최신 버전으로 게시되어 있는지 Firebase 콘솔에서 확인해주세요.`
+          : '영수증 생성 중 오류가 발생했습니다. 다시 시도해주세요.',
       };
     }
   };
