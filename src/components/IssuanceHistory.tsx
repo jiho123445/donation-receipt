@@ -1,5 +1,5 @@
 import React, { useState, useMemo } from 'react';
-import { FileText, Search, Printer, Download, Ban, Eye, CheckCircle, AlertCircle, Calendar, RotateCcw, Share2, MessageSquare, Mail } from 'lucide-react';
+import { FileText, Search, Printer, Download, Ban, Eye, CheckCircle, AlertCircle, Calendar, RotateCcw, Share2, MessageSquare, Mail, Trash2 } from 'lucide-react';
 import { IssuedReceiptRecord } from '../types/donation';
 import { formatKRW } from '../utils/hangulCurrency';
 import { exportIssuedReceiptsToExcel } from '../utils/excelParser';
@@ -9,16 +9,19 @@ interface IssuanceHistoryProps {
   receipts: IssuedReceiptRecord[];
   onSelectReceipt: (receipt: IssuedReceiptRecord) => void;
   onCancelReceipt: (receiptNo: string) => void;
+  onDeleteReceipt: (receiptNo: string) => void;
 }
 
 export const IssuanceHistory: React.FC<IssuanceHistoryProps> = ({
   receipts,
   onSelectReceipt,
   onCancelReceipt,
+  onDeleteReceipt,
 }) => {
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedYear, setSelectedYear] = useState<string>('all');
   const [cancelTargetNo, setCancelTargetNo] = useState<string | null>(null);
+  const [deleteTargetNo, setDeleteTargetNo] = useState<string | null>(null);
   const [shareTargetReceipt, setShareTargetReceipt] = useState<IssuedReceiptRecord | null>(null);
   const [shareInitialTab, setShareInitialTab] = useState<'kakao' | 'email'>('kakao');
   // '초기화'는 실제 발급 데이터를 삭제하지 않고, 화면 표시만 초기화합니다.
@@ -301,12 +304,19 @@ export const IssuanceHistory: React.FC<IssuanceHistoryProps> = ({
                             <button
                               onClick={() => setCancelTargetNo(r.receiptNo)}
                               className="p-1 text-slate-400 hover:text-red-600 rounded hover:bg-red-50 transition-colors cursor-pointer"
-                              title="발급 취소 처리"
+                              title="발급 취소 처리 (이력은 보존됨)"
                             >
                               <Ban className="w-3.5 h-3.5" />
                             </button>
                           </>
                         )}
+                        <button
+                          onClick={() => setDeleteTargetNo(r.receiptNo)}
+                          className="p-1 text-slate-400 hover:text-white hover:bg-red-600 rounded transition-colors cursor-pointer"
+                          title="완전 삭제 (테스트 발급내역 등을 흔적 없이 삭제, 되돌릴 수 없음)"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
                       </div>
                     </td>
                   </tr>
@@ -346,6 +356,44 @@ export const IssuanceHistory: React.FC<IssuanceHistoryProps> = ({
                 className="px-4 py-2 text-xs font-bold text-white bg-red-600 hover:bg-red-700 rounded-md shadow-xs cursor-pointer"
               >
                 발급취소 확정
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Permanent Delete Confirmation Modal */}
+      {deleteTargetNo && (
+        <div className="fixed inset-0 z-50 overflow-y-auto bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white rounded-xl shadow-2xl max-w-md w-full p-6 border border-slate-200 animate-in fade-in zoom-in-95 duration-150">
+            <div className="w-12 h-12 rounded-full bg-red-100 text-red-600 flex items-center justify-center mb-4">
+              <Trash2 className="w-6 h-6" />
+            </div>
+            <h3 className="text-base font-bold text-slate-900">
+              발급내역을 완전히 삭제하시겠습니까?
+            </h3>
+            <p className="text-xs text-red-700 font-semibold mt-2 leading-relaxed">
+              발급번호 <strong>{deleteTargetNo}</strong> 내역이 로컬 저장소와 Firebase에서 완전히 삭제됩니다. 이 작업은 되돌릴 수 없습니다. (단순 취소가 아니라 기록 자체가 사라집니다.)
+            </p>
+            <p className="text-xs text-slate-500 mt-1.5 leading-relaxed">
+              실제 발급된 정상 영수증이 아니라, 테스트로 발급했던 내역을 정리할 때만 사용하세요.
+            </p>
+
+            <div className="mt-6 flex items-center justify-end gap-3">
+              <button
+                onClick={() => setDeleteTargetNo(null)}
+                className="px-4 py-2 text-xs font-semibold text-slate-700 bg-slate-100 hover:bg-slate-200 rounded-md cursor-pointer"
+              >
+                취소
+              </button>
+              <button
+                onClick={() => {
+                  onDeleteReceipt(deleteTargetNo);
+                  setDeleteTargetNo(null);
+                }}
+                className="px-4 py-2 text-xs font-bold text-white bg-red-600 hover:bg-red-700 rounded-md shadow-xs cursor-pointer"
+              >
+                완전 삭제
               </button>
             </div>
           </div>
