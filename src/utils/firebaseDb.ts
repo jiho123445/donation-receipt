@@ -370,6 +370,23 @@ export async function cancelCloudReceipt(receiptNo: string): Promise<void> {
   }
 }
 
+// 발급취소(무효화)와 달리, 이 함수는 receipts / issuedReceipts 컬렉션에서 문서 자체를
+// 완전히 삭제합니다. 테스트로 발급한 내역을 흔적 없이 지우고 싶을 때 사용합니다.
+export async function deleteCloudReceipt(receiptNo: string): Promise<void> {
+  const { deleteDoc } = await import('firebase/firestore');
+  const firestore = requireDb();
+  try {
+    await deleteDoc(doc(firestore, 'receipts', receiptNo));
+  } catch (e) {
+    console.warn('Delete on receipts failed:', e);
+  }
+  try {
+    await deleteDoc(doc(firestore, 'issuedReceipts', receiptNo));
+  } catch (e) {
+    console.warn('Delete on issuedReceipts failed:', e);
+  }
+}
+
 export async function getNextCloudReceiptNumber(
   taxYear: number,
   kind: 'receipt' | 'membership' = 'receipt'
