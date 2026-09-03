@@ -649,8 +649,13 @@ export async function parseDonationExcel(file: File): Promise<ParseResult> {
     throw new Error('엑셀 열 이름을 인식할 수 없습니다. 최소한 성명과 후원금액 열이 포함되어 있는지 확인해주세요.');
   }
 
+  // 이 파일에서 만들어진 모든 레코드에 "출처 파일 해시"를 표시해둡니다.
+  // 나중에 같은 파일을 다시 올렸을 때("이미 가져온 파일이 있습니다" 확인 후 재가져오기),
+  // 이 표시를 기준으로 이전에 이 파일에서 저장했던 레코드만 정확히 찾아 교체할 수 있습니다.
+  const taggedRecords = allRecords.map((r) => ({ ...r, sourceFileHash: fileHash }));
+
   return {
-    records: allRecords,
+    records: taggedRecords,
     columnMapping: columnMappingSummary,
     missingRequired: [],
     totalRows: allRecords.length,
