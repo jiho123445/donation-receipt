@@ -399,12 +399,26 @@ export default function App() {
 
   // Permanently delete an Issued Receipt (테스트 발급내역 등을 완전히 삭제할 때 사용)
   // '발급취소'와 달리 이력을 남기지 않고 로컬/클라우드에서 완전히 제거합니다.
-  const handleDeleteReceipt = (receiptNo: string) => {
+  // 클라우드(Firebase)를 사용 중이면 클라우드 삭제가 먼저 성공한 뒤에만 화면 목록에서
+  // 지웁니다. (클라우드 삭제가 권한 문제 등으로 조용히 실패하면, 화면에서는 지워진
+  // 것처럼 보여도 실제로는 Firestore에 그대로 남아있어 다음 접속/발급 시 다시
+  // 나타나는 문제가 있었습니다.)
+  const handleDeleteReceipt = async (receiptNo: string) => {
+    if (firebaseConfigured && auth?.currentUser) {
+      try {
+        await deleteCloudReceipt(receiptNo);
+      } catch (error: any) {
+        console.error('클라우드 발급내역 삭제 실패:', error);
+        alert(
+          `발급내역 삭제에 실패했습니다.\n\n` +
+          `사유: ${error?.code || error?.message || '알 수 없는 오류'}\n\n` +
+          `Firestore 보안규칙(firestore.rules)이 최신 버전으로 게시되어 있는지 Firebase 콘솔에서 확인해주세요.`
+        );
+        return;
+      }
+    }
     deleteIssuedReceiptLocal(receiptNo);
     setIssuedReceipts((prev) => prev.filter((r) => r.receiptNo !== receiptNo));
-    if (firebaseConfigured && auth?.currentUser) {
-      deleteCloudReceipt(receiptNo).catch(console.error);
-    }
   };
 
   // Confirm and Generate a New Receipt
