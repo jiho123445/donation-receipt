@@ -186,6 +186,22 @@ function parseExcelDate(val: any): string {
     return `${yearMonth[1]}-${yearMonth[2].padStart(2, '0')}`;
   }
 
+  // 10. M/D/YY 또는 M/D/YYYY (월/일/연도 순서, 예: "1/21/26")
+  // 엑셀 셀 서식이 내장 서식 코드(예: 짧은 날짜)로 되어 있으면, SheetJS는 실제 파일의
+  // 지역(한국) 표시와 무관하게 항상 "m/d/yy"(월/일/연도) 순서의 문자열로 변환합니다.
+  // 그래서 셀에는 "2026-01-21"로 보이는 날짜라도, 이 앱이 읽어들이는 값은 "1/21/26"처럼
+  // 나오는 경우가 있어 이 형식을 별도로 처리합니다.
+  const usSlashDate = str.match(/^(\d{1,2})\/(\d{1,2})\/(\d{2}|\d{4})$/);
+  if (usSlashDate) {
+    const month = String(Number(usSlashDate[1])).padStart(2, '0');
+    const day = String(Number(usSlashDate[2])).padStart(2, '0');
+    const yearPart = usSlashDate[3];
+    const fullYear = yearPart.length === 2 ? `20${yearPart}` : yearPart;
+    if (Number(month) >= 1 && Number(month) <= 12 && Number(day) >= 1 && Number(day) <= 31) {
+      return `${fullYear}-${month}-${day}`;
+    }
+  }
+
   return '';
 }
 
