@@ -56,3 +56,36 @@ export function mergeDonationRecords(
     duplicates,
   };
 }
+
+/**
+ * "이미 가져온 파일이 있습니다 → 그래도 다시 가져오기"를 눌렀을 때 사용하는 병합 방식입니다.
+ *
+ * 문제: incoming 레코드의 id는 파싱할 때마다 새로 무작위 생성되므로(excelParser.ts),
+ * 파싱 코드를 고쳐서 같은 파일을 다시 올려도 mergeDonationRecords()의 id 비교로는
+ * "예전 레코드"를 알아볼 수 없어 항상 added로 취급됩니다. 그 결과 예전 레코드(예:
+ * 날짜가 잘못 인식된 것)는 그대로 남고 새 레코드가 추가되어 같은 내역이 두 배로 쌓입니다.
+ *
+ * 해결: 각 레코드는 파싱 시점에 원본 파일의 SHA-256 해시(sourceFileHash)를 갖고 있습니다.
+ * "다시 가져오기"는 정의상 내용이 완전히 동일한 파일에 대해서만 뜨는 확인창이므로,
+ * 그 파일 해시를 가진 기존 레코드를 전부 제거하고 새로 파싱된 레코드로 교체하는 것이
+ * 안전합니다(다른 파일에서 온 레코드는 sourceFileHash가 달라 영향받지 않습니다).
+ */
+export function replaceFileRecords(
+  existing: RawDonationRecord[],
+  incoming: RawDonationRecord[],
+  fileHashes: string[]
+): {
+  records: RawDonationRecord[];
+  removed: RawDonationRecord[];
+  added: RawDonationRecord[];
+} {
+  const hashSet = new Set(fileHashes.filter(Boolean));
+  const removed = existing.filter((r) => r.sourceFileHash && hashSet.has(r.sourceFileHash));
+  const kept = existing.filter((r) => !(r.sourceFileHash && hashSet.has(r.sourceFileHash)));
+
+  return {
+    records: [...kept, ...incoming],
+    removed,
+    added: incoming,
+  };
+}
