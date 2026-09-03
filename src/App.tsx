@@ -20,6 +20,7 @@ import {
   getIssuedReceipts,
   saveIssuedReceipt,
   cancelIssuedReceipt,
+  deleteIssuedReceiptLocal,
   getNextReceiptNumber,
   getPrintSettings,
   savePrintSettings,
@@ -60,6 +61,7 @@ import {
   saveCloudOrganization,
   saveCloudReceipt,
   cancelCloudReceipt,
+  deleteCloudReceipt,
   getNextCloudReceiptNumber,
   testFirestoreConnection,
   saveCloudDonor,
@@ -395,6 +397,16 @@ export default function App() {
     }
   };
 
+  // Permanently delete an Issued Receipt (테스트 발급내역 등을 완전히 삭제할 때 사용)
+  // '발급취소'와 달리 이력을 남기지 않고 로컬/클라우드에서 완전히 제거합니다.
+  const handleDeleteReceipt = (receiptNo: string) => {
+    deleteIssuedReceiptLocal(receiptNo);
+    setIssuedReceipts((prev) => prev.filter((r) => r.receiptNo !== receiptNo));
+    if (firebaseConfigured && auth?.currentUser) {
+      deleteCloudReceipt(receiptNo).catch(console.error);
+    }
+  };
+
   // Confirm and Generate a New Receipt
   const handleConfirmIssuance = async (
     formType: ReceiptFormType,
@@ -643,6 +655,7 @@ export default function App() {
             receipts={issuedReceipts}
             onSelectReceipt={(receipt) => setPreviewReceipt(receipt)}
             onCancelReceipt={handleCancelReceipt}
+            onDeleteReceipt={handleDeleteReceipt}
           />
         )}
 
