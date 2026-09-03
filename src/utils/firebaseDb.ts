@@ -234,6 +234,26 @@ export async function deleteAllCloudDonations(): Promise<number> {
   return deleteAllDocsInCollection('donations');
 }
 
+/**
+ * 지정한 id들의 donations 문서만 정확히 삭제합니다.
+ * "같은 엑셀 파일을 다시 가져오기"에서, 그 파일 해시로 저장됐던 예전 레코드만
+ * 콕 집어 지우고 다른 파일의 자료는 건드리지 않기 위해 사용합니다.
+ */
+export async function deleteCloudDonationsByIds(ids: string[]): Promise<number> {
+  const validIds = ids.filter(Boolean);
+  if (validIds.length === 0) return 0;
+  const firestore = requireDb();
+  let deleted = 0;
+  for (let i = 0; i < validIds.length; i += 400) {
+    const chunk = validIds.slice(i, i + 400);
+    const batch = writeBatch(firestore);
+    chunk.forEach((id) => batch.delete(doc(firestore, 'donations', id)));
+    await batch.commit();
+    deleted += chunk.length;
+  }
+  return deleted;
+}
+
 /* ==========================================================================
    2-1. importedFiles 컬렉션: "같은 파일을 실수로 두 번 올렸는지" 확인용
    (행 단위 내용 추측 대신, 파일 전체 해시로 명확하게 확인 — donationDedup.ts 참고)
