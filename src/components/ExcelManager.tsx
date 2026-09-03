@@ -11,7 +11,10 @@ interface ParsedFile {
 
 interface ExcelManagerProps {
   donations: RawDonationRecord[];
-  onUpdateDonations: (records: RawDonationRecord[]) => Promise<{ total: number; added: number; duplicates: number }>;
+  onUpdateDonations: (
+    records: RawDonationRecord[],
+    reimportFileHashes?: string[]
+  ) => Promise<{ total: number; added: number; duplicates: number; replaced?: number }>;
   onClearDonations: () => Promise<{ deleted: number }>;
   onLoadSample: () => void;
   /** 파일 해시로 "이미 가져온 파일인지" 확인합니다. Firebase 미연결 시 항상 null을 반환합니다. */
@@ -43,7 +46,9 @@ export const ExcelManager: React.FC<ExcelManagerProps> = ({
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // 파싱된 파일들을 실제로 저장까지 진행합니다. (재업로드 확인을 통과했거나, 처음 올리는 경우)
-  const commitParsedFiles = async (parsedFiles: ParsedFile[], errors: string[]) => {
+  // isReimport가 true면 "그래도 다시 가져오기"로 확인받은 경우이므로, 같은 파일 해시로
+  // 저장돼있던 예전 레코드를 이번에 새로 파싱된 레코드로 정확히 교체합니다.
+  const commitParsedFiles = async (parsedFiles: ParsedFile[], errors: string[], isReimport = false) => {
     const allRecords: RawDonationRecord[] = [];
     const allMappings: Record<string, string> = {};
     let totalRows = 0;
@@ -60,7 +65,8 @@ export const ExcelManager: React.FC<ExcelManagerProps> = ({
       throw new Error(errors.length ? errors.join(' / ') : '유효한 후원 데이터가 발견되지 않았습니다. 성명과 후원금액이 있는 행인지 확인해주세요.');
     }
 
-    const saveResult = await onUpdateDonations(allRecords);
+    const reimportFileHashes = isReimport ? parsedFiles.map((pf) => pf.result.fileHash) : undefined;
+    const saveResult = await onUpdateDonations(allRecords, reimportFileHashes);
     setLastSaveResult(saveResult);
     setLastParseResult({
       records: allRecords,
@@ -72,6 +78,7 @@ export const ExcelManager: React.FC<ExcelManagerProps> = ({
     });
 
     // 저장이 끝난 뒤에만 "이 파일을 가져왔다"고 기록합니다. (저장 실패 시 기록하지 않음)
+    // 재가져오기의 경우에도 가져온 시각/건수를 최신으로 갱신해둡니다.
     for (const { file, result } of parsedFiles) {
       try {
         await onRecordFileImport(result.fileHash, file.name, result.records.length);
@@ -81,8 +88,9 @@ export const ExcelManager: React.FC<ExcelManagerProps> = ({
     }
 
     const skippedText = errors.length > 0 ? ` / 확인 필요 ${errors.length}개 파일` : '';
+    const replacedText = saveResult.replaced ? ` (예전 자료 ${saveResult.replaced.toLocaleString()}건 교체됨)` : '';
     setSuccessMessage(
-      `${parsedFiles.length}개 파일 분석 ${allRecords.length.toLocaleString()}건 → 신규 ${saveResult.added.toLocaleString()}건 추가 → 최종 누적 ${saveResult.total.toLocaleString()}건${skippedText}`
+      `${parsedFiles.length}개 파일 분석 ${allRecords.length.toLocaleString()}건 → 신규 ${saveResult.added.toLocaleString()}건 추가${replacedText} → 최종 누적 ${saveResult.total.toLocaleString()}건${skippedText}`
     );
     if (errors.length > 0) setErrorMessage(errors.join(' / '));
   };
@@ -404,7 +412,6 @@ export const ExcelManager: React.FC<ExcelManagerProps> = ({
             </h3>
             <p className="text-xs text-slate-600 mt-2 leading-relaxed">
               아래 파일은 이전에 이미 가져와서 저장한 적이 있는 파일과 <strong>내용이 완전히 동일</strong>합니다.
-              그대로 다시 가져오면 같은 후원건이 중복으로 추가될 수 있습니다.
             </p>
             <ul className="mt-3 space-y-2">
               {pendingReimport.alreadyImported.map((item) => (
@@ -417,7 +424,10 @@ export const ExcelManager: React.FC<ExcelManagerProps> = ({
               ))}
             </ul>
             <p className="text-xs text-slate-500 mt-3">
-              내용을 수정한 새 파일이라면 안심하고 다시 가져오셔도 됩니다(내용이 조금이라도 다르면 이 확인창은 뜨지 않습니다).
+              "그래도 다시 가져오기"를 누르면 이 파일에서 예전에 저장했던 자료는 모두 지우고
+              이번에 새로 분석한 내용으로 정확히 교체합니다(중복으로 쌓이지 않습니다).
+              앱 업데이트로 날짜/금액 등이 다르게 인식되게 고쳤을 때 다시 반영하려는 경우 사용하세요.
+              내용을 수정한 새 파일이라면 파일 내용이 달라 이 확인창 없이 바로 추가됩니다.
               정말 같은 파일을 다시 가져오시겠습니까?
             </p>
 
@@ -439,7 +449,7 @@ export const ExcelManager: React.FC<ExcelManagerProps> = ({
                   setErrorMessage(null);
                   setSuccessMessage(null);
                   try {
-                    await commitParsedFiles(parsedFiles, []);
+                    await commitParsedFiles(parsedFiles, [], true);
                   } catch (err: any) {
                     setErrorMessage(err.message || '엑셀 파일을 저장하는 중 오류가 발생했습니다.');
                   } finally {
