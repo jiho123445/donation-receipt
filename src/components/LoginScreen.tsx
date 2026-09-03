@@ -213,7 +213,7 @@ export const LoginScreen: React.FC = () => {
           </div>
 
           <h1 className="text-2xl font-black text-slate-900 tracking-tight">
-            기부금영수증 발급시스템
+            행정관리시스템
           </h1>
           <p className="text-xs text-slate-500 mt-1.5">
             Cloud Firestore 및 Authentication 연동 관리자 로그인

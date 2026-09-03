@@ -51,7 +51,7 @@ export const Header: React.FC<HeaderProps> = ({
                 <span className="text-xs text-slate-500 font-medium">사회복지법인 행정전산</span>
               </div>
               <h1 className="text-lg font-bold text-slate-900 leading-tight group-hover:text-blue-950">
-                {orgInfo.name} <span className="text-blue-900 font-extrabold">기부금영수증 발급시스템</span>
+                {orgInfo.name} <span className="text-blue-900 font-extrabold">행정관리시스템</span>
               </h1>
             </div>
           </div>
