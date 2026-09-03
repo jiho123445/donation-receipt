@@ -520,6 +520,7 @@ export default function App() {
         orgInfo={orgInfo}
         openSettingsModal={() => setIsOrgSettingsOpen(true)}
         onResetSearch={handleResetSearch}
+        onLogout={handleLogout}
       />
 
       {/* Firestore Connection / Load Status Banner
