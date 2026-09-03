@@ -1,5 +1,11 @@
 import React, { useState, useEffect } from 'react';
-import { X, Building2, ShieldAlert, Check, Save, Upload, Stamp } from 'lucide-react';
+import { X, Building2, ShieldAlert, Check, Save, Upload, Stamp, KeyRound } from 'lucide-react';
+import {
+  updatePassword,
+  reauthenticateWithCredential,
+  EmailAuthProvider,
+  type User,
+} from 'firebase/auth';
 import { OrganizationInfo } from '../types/donation';
 import { OfficialSeal } from './OfficialSeal';
 
@@ -8,6 +14,7 @@ interface OrgSettingsModalProps {
   onClose: () => void;
   orgInfo: OrganizationInfo;
   onSave: (updated: OrganizationInfo) => void;
+  user?: User | null;
 }
 
 export const OrgSettingsModal: React.FC<OrgSettingsModalProps> = ({
@@ -15,12 +22,26 @@ export const OrgSettingsModal: React.FC<OrgSettingsModalProps> = ({
   onClose,
   orgInfo,
   onSave,
+  user,
 }) => {
   const [formData, setFormData] = useState<OrganizationInfo>(orgInfo);
   const [savedSuccess, setSavedSuccess] = useState(false);
 
+  // 비밀번호 변경 관련 상태
+  const [currentPassword, setCurrentPassword] = useState('');
+  const [newPassword, setNewPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [pwError, setPwError] = useState<string | null>(null);
+  const [pwSuccess, setPwSuccess] = useState(false);
+  const [isPwSaving, setIsPwSaving] = useState(false);
+
   useEffect(() => {
     setFormData(orgInfo);
+    setCurrentPassword('');
+    setNewPassword('');
+    setConfirmPassword('');
+    setPwError(null);
+    setPwSuccess(false);
   }, [orgInfo, isOpen]);
 
   if (!isOpen) return null;
@@ -48,6 +69,57 @@ export const OrgSettingsModal: React.FC<OrgSettingsModalProps> = ({
       setSavedSuccess(false);
       onClose();
     }, 800);
+  };
+
+  const handleChangePassword = async () => {
+    setPwError(null);
+    setPwSuccess(false);
+
+    if (!user || !user.email) {
+      setPwError('로그인 정보가 없어 비밀번호를 변경할 수 없습니다. 다시 로그인한 후 시도해주세요.');
+      return;
+    }
+    if (!currentPassword || !newPassword || !confirmPassword) {
+      setPwError('현재 비밀번호와 새 비밀번호를 모두 입력해주세요.');
+      return;
+    }
+    if (newPassword.length < 6) {
+      setPwError('새 비밀번호는 6자 이상이어야 합니다.');
+      return;
+    }
+    if (newPassword !== confirmPassword) {
+      setPwError('새 비밀번호와 확인이 서로 일치하지 않습니다.');
+      return;
+    }
+
+    setIsPwSaving(true);
+    try {
+      // Firebase는 비밀번호 변경 전 최근 로그인(재인증)을 요구합니다.
+      const credential = EmailAuthProvider.credential(user.email, currentPassword);
+      await reauthenticateWithCredential(user, credential);
+      await updatePassword(user, newPassword);
+
+      setPwSuccess(true);
+      setCurrentPassword('');
+      setNewPassword('');
+      setConfirmPassword('');
+      setTimeout(() => setPwSuccess(false), 3000);
+    } catch (err: any) {
+      const code: string = err?.code || '';
+      if (code.includes('wrong-password') || code.includes('invalid-credential')) {
+        setPwError('현재 비밀번호가 올바르지 않습니다.');
+      } else if (code.includes('weak-password')) {
+        setPwError('비밀번호가 너무 약합니다. 6자 이상의 다른 비밀번호를 입력해주세요.');
+      } else if (code.includes('requires-recent-login')) {
+        setPwError('보안을 위해 다시 로그인한 후 비밀번호를 변경해주세요.');
+      } else if (code.includes('too-many-requests')) {
+        setPwError('시도 횟수가 너무 많습니다. 잠시 후 다시 시도해주세요.');
+      } else {
+        setPwError(`비밀번호 변경 중 오류가 발생했습니다. (${code || err?.message || '알 수 없는 오류'})`);
+      }
+    } finally {
+      setIsPwSaving(false);
+    }
   };
 
   return (
@@ -274,6 +346,68 @@ export const OrgSettingsModal: React.FC<OrgSettingsModalProps> = ({
                   )}
                 </div>
               </div>
+            </div>
+          </div>
+
+          {/* Admin password management */}
+          <div className="mt-4 pt-4 border-t border-slate-200">
+            <label className="block text-xs font-bold text-slate-800 mb-2 flex items-center gap-1.5">
+              <KeyRound className="w-4 h-4 text-blue-700" />
+              <span>관리자 비밀번호 변경</span>
+            </label>
+            <div className="bg-slate-50 p-3 rounded-lg border border-slate-200 space-y-3">
+              <p className="text-[11px] text-slate-500">
+                로그인 계정({user?.email || '알 수 없음'})의 비밀번호를 변경합니다. 현재 비밀번호를 확인한 후 새 비밀번호로 변경됩니다.
+              </p>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
+                <input
+                  type="password"
+                  value={currentPassword}
+                  onChange={(e) => setCurrentPassword(e.target.value)}
+                  placeholder="현재 비밀번호"
+                  autoComplete="current-password"
+                  className="w-full px-3 py-2 text-sm border border-slate-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white"
+                />
+                <input
+                  type="password"
+                  value={newPassword}
+                  onChange={(e) => setNewPassword(e.target.value)}
+                  placeholder="새 비밀번호 (6자 이상)"
+                  autoComplete="new-password"
+                  className="w-full px-3 py-2 text-sm border border-slate-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white"
+                />
+                <input
+                  type="password"
+                  value={confirmPassword}
+                  onChange={(e) => setConfirmPassword(e.target.value)}
+                  placeholder="새 비밀번호 확인"
+                  autoComplete="new-password"
+                  className="w-full px-3 py-2 text-sm border border-slate-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white"
+                />
+              </div>
+
+              {pwError && (
+                <p className="text-xs text-red-600 flex items-start gap-1.5">
+                  <ShieldAlert className="w-3.5 h-3.5 shrink-0 mt-0.5" />
+                  <span>{pwError}</span>
+                </p>
+              )}
+              {pwSuccess && (
+                <p className="text-xs text-emerald-700 font-semibold flex items-center gap-1.5">
+                  <Check className="w-3.5 h-3.5" />
+                  <span>비밀번호가 변경되었습니다.</span>
+                </p>
+              )}
+
+              <button
+                type="button"
+                onClick={handleChangePassword}
+                disabled={isPwSaving}
+                className="inline-flex items-center gap-2 px-4 py-2 text-xs font-bold text-white bg-slate-800 hover:bg-slate-900 rounded-md shadow-xs transition-colors cursor-pointer disabled:opacity-50"
+              >
+                <KeyRound className="w-3.5 h-3.5" />
+                <span>{isPwSaving ? '변경 중...' : '비밀번호 변경하기'}</span>
+              </button>
             </div>
           </div>
 

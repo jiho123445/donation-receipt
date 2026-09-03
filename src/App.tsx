@@ -674,6 +674,7 @@ export default function App() {
         onClose={() => setIsOrgSettingsOpen(false)}
         orgInfo={orgInfo}
         onSave={handleSaveOrgInfo}
+        user={user}
       />
 
       {/* Modal 2: Print Settings Modal */}

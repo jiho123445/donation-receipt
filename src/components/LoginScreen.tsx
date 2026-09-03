@@ -17,8 +17,21 @@ import {
 import { auth, getFirebaseDiagnostics } from '../firebase';
 import { testFirestoreConnection, type FirestoreConnectionStatus } from '../utils/firebaseDb';
 
+// 관리자 이메일을 브라우저에 저장해두어, 한 번 로그인하면 다음 접속부터는
+// 이메일을 다시 입력하지 않아도 되도록 합니다. 비밀번호는 저장하지 않습니다.
+const ADMIN_EMAIL_STORAGE_KEY = 'donation-receipt-admin-email';
+const DEFAULT_ADMIN_EMAIL = 'hcdmh1026@naver.com';
+
+const getRememberedEmail = (): string => {
+  try {
+    return localStorage.getItem(ADMIN_EMAIL_STORAGE_KEY) || DEFAULT_ADMIN_EMAIL;
+  } catch {
+    return DEFAULT_ADMIN_EMAIL;
+  }
+};
+
 export const LoginScreen: React.FC = () => {
-  const [email, setEmail] = useState('');
+  const [email, setEmail] = useState<string>(getRememberedEmail);
   const [password, setPassword] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [isTesting, setIsTesting] = useState(false);
@@ -162,6 +175,12 @@ export const LoginScreen: React.FC = () => {
       // Firebase SDK native method
       await signInWithEmailAndPassword(auth, email.trim(), password);
       // Successful login triggers onAuthStateChanged in App.tsx
+      // 로그인 성공 시 이메일 주소를 저장해, 다음 접속부터는 자동으로 채워지도록 합니다.
+      try {
+        localStorage.setItem(ADMIN_EMAIL_STORAGE_KEY, email.trim());
+      } catch {
+        // localStorage 사용 불가 환경(예: 프라이빗 모드)이어도 로그인 자체는 정상 진행됩니다.
+      }
     } catch (err: any) {
       console.error('Firebase Auth Login Error Object:', err);
       const code = err?.code || 'unknown-error';
