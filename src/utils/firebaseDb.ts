@@ -375,11 +375,12 @@ export async function cancelCloudReceipt(receiptNo: string): Promise<void> {
 export async function deleteCloudReceipt(receiptNo: string): Promise<void> {
   const { deleteDoc } = await import('firebase/firestore');
   const firestore = requireDb();
-  try {
-    await deleteDoc(doc(firestore, 'receipts', receiptNo));
-  } catch (e) {
-    console.warn('Delete on receipts failed:', e);
-  }
+  // receipts는 주 컬렉션이므로 여기서 실패하면(예: 보안규칙 권한 거부) 에러를 그대로
+  // 위로 던져서, 호출한 쪽(App.tsx)이 "삭제된 것처럼" 착각하지 않고 사용자에게
+  // 실패를 알릴 수 있도록 합니다.
+  await deleteDoc(doc(firestore, 'receipts', receiptNo));
+  // issuedReceipts는 과거 호환용 보조 컬렉션이라, 여기서 실패해도(예: 애초에 문서가
+  // 없던 경우) 전체 삭제를 실패로 처리하지 않습니다.
   try {
     await deleteDoc(doc(firestore, 'issuedReceipts', receiptNo));
   } catch (e) {
