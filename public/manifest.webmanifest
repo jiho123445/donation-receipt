@@ -1,0 +1,39 @@
+{
+  "id": "/foundation-admin-system-v4",
+  "name": "재단 행정관리시스템",
+  "short_name": "재단 행정관리시스템",
+  "description": "사단법인 너브내행복나눔재단 행정관리시스템",
+  "lang": "ko-KR",
+  "start_url": "/?app=foundation-admin-v4",
+  "scope": "/",
+  "display": "standalone",
+  "display_override": ["window-controls-overlay", "standalone"],
+  "background_color": "#ffffff",
+  "theme_color": "#c41455",
+  "icons": [
+    {
+      "src": "/icon-192-v4.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/icon-512-v4.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/icon-192-maskable-v4.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "maskable"
+    },
+    {
+      "src": "/icon-512-maskable-v4.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ]
+}
